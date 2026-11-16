@@ -11,7 +11,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const site = await currentSite();
   const params = await searchParams;
   if (site.kind === 'app') return <AppHome baseDomain={site.baseDomain} error={firstParam(params.error)} choose={firstParam(params.choose) === '1'} />;
-  if (site.kind === 'platform') return <PlatformHome />;
+  if (site.kind === 'platform') return <PlatformHome baseDomain={site.baseDomain} />;
   if (site.kind === 'tenant') return <TenantHome baseDomain={site.baseDomain} error={firstParam(params.error)} />;
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center px-6 py-16 sm:px-12">

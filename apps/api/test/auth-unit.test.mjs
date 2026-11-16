@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 
 Object.assign(process.env, {
   DATABASE_URL: 'postgresql://test:local@localhost:5432/test',
-  JWT_SECRET_TENANT: 't'.repeat(40), JWT_SECRET_APP: 'a'.repeat(40), JWT_SECRET_PLATFORM: 'p'.repeat(40),
+  JWT_SECRET_TENANT: 't'.repeat(40), JWT_SECRET_APP: 'a'.repeat(40), JWT_SECRET_PLATFORM: 'p'.repeat(40), PLATFORM_TOTP_KEY: 'ab'.repeat(32),
   APP_BASE_DOMAIN: 'localhost', PUBLIC_PORT: '8080', NODE_ENV: 'test',
 });
 
@@ -122,4 +122,67 @@ test('CSRF: unsafe requests need the exact own Origin and JSON; handoff accepts 
   const finish = { path: '/api/auth/handoff/finish', type: 'application/x-www-form-urlencoded' };
   assert.equal(originCheck(tenant, { ...finish, origin: 'http://nova.localhost:8080' }), 200);
   assert.equal(originCheck(tenant, { ...finish, origin: 'http://app.localhost:8080' }), 403, 'second step only from its own origin');
+});
+
+// ───────────── Phase 4: TOTP, шифрование, временные пароли, ограничения сессии ─────────────
+const totp = await import('../dist/auth/totp.js');
+const { temporaryPassword } = await import('../dist/auth/password.service.js');
+
+test('TOTP matches the RFC 6238 reference vector and rejects replays', () => {
+  const secret = Buffer.from('12345678901234567890'); // RFC 6238, приложение B, SHA1
+  assert.equal(totp.totpCode(secret, Math.floor(59 / 30)), '287082');          // 94287082 → 6 цифр
+  assert.equal(totp.totpCode(secret, Math.floor(1111111109 / 30)), '081804');  // 07081804
+  const now = 1111111109 * 1000;
+  const step = totp.verifyTotp(secret, '081804', null, now);
+  assert.equal(step, Math.floor(1111111109 / 30));
+  assert.equal(totp.verifyTotp(secret, '081804', step, now), null, 'same step cannot be used twice');
+  assert.equal(totp.verifyTotp(secret, '000000', null, now), null);
+  assert.equal(totp.verifyTotp(secret, '12345', null, now), null);
+  // Соседний шаг (часы телефона отстают на 30 с) принимается, через два шага — нет.
+  assert.notEqual(totp.verifyTotp(secret, totp.totpCode(secret, step - 1), null, now), null);
+  assert.equal(totp.verifyTotp(secret, totp.totpCode(secret, step - 2), null, now), null);
+});
+
+test('base32 round-trips and otpauth URI carries issuer and account', () => {
+  const secret = totp.newTotpSecret();
+  assert.equal(secret.length, 20);
+  assert.deepEqual(totp.base32Decode(totp.base32Encode(secret)), secret);
+  const uri = new URL(totp.otpauthUri(secret, 'me@example.com'));
+  assert.equal(uri.protocol, 'otpauth:');
+  assert.equal(uri.searchParams.get('issuer'), 'Modulyn');
+  assert.equal(uri.searchParams.get('secret'), totp.base32Encode(secret));
+});
+
+test('TOTP secrets are sealed with AES-256-GCM; another key or tampering fails', () => {
+  const key = Buffer.alloc(32, 7);
+  const secret = totp.newTotpSecret();
+  const sealed = totp.sealSecret(key, secret);
+  assert.ok(!sealed.includes(totp.base32Encode(secret)));
+  assert.notEqual(totp.sealSecret(key, secret), sealed, 'random IV');
+  assert.deepEqual(totp.openSecret(key, sealed), secret);
+  assert.throws(() => totp.openSecret(Buffer.alloc(32, 8), sealed));
+  const raw = Buffer.from(sealed, 'base64'); raw[raw.length - 1] ^= 1;
+  assert.throws(() => totp.openSecret(key, raw.toString('base64')));
+});
+
+test('recovery codes and temporary passwords are random and readable', () => {
+  const codes = totp.newRecoveryCodes();
+  assert.equal(codes.length, 10);
+  assert.equal(new Set(codes).size, 10);
+  for (const c of codes) assert.match(c, /^[A-Z2-7]{5}-[A-Z2-7]{5}$/);
+  assert.equal(totp.normalizeRecoveryCode(' abcde-fghij '), 'ABCDEFGHIJ');
+  const p = temporaryPassword();
+  assert.match(p, /^[a-km-np-z2-9A]{20}$/);
+  assert.notEqual(p, temporaryPassword());
+});
+
+test('guard: a restricted session reaches only routes that allow its restriction', async () => {
+  const restricted = { adminId: 'a', sessionId: 's', restricted: 'mfa-setup' };
+  const platform = () => ({ kind: 'platform', host: 'admin.localhost:8080' });
+  await assert.rejects(guardWith({ principal: restricted })(platform()),
+    e => e.getStatus() === 403 && e.getResponse().code === 'MFA_SETUP_REQUIRED');
+  assert.equal(await guardWith({ meta: { 'modulyn:allow-restricted': ['mfa-setup'] }, principal: restricted })(platform()), true);
+  const temp = { userId: 'u', sessionId: 's', restricted: 'password-change' };
+  await assert.rejects(guardWith({ meta: { 'modulyn:allow-restricted': ['mfa-setup'] }, principal: temp })({ kind: 'app', host: 'app.localhost:8080' }),
+    e => e.getResponse().code === 'PASSWORD_CHANGE_REQUIRED');
 });

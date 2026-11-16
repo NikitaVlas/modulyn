@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { AppMeResponse } from '@modulyn/contracts';
 import { Brand, Button, Card, Centered, Loading, Notice } from '../../components/ui';
 import { ApiError, api, originOf, post } from './api';
+import { PasswordForm } from './PasswordForm';
 
 const ROLE: Record<string, string> = { TENANT_ADMIN: 'Администратор', MANAGER: 'Менеджер' };
 
@@ -17,10 +18,12 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
   const [failed, setFailed] = useState(false);
   const router = useRouter();
 
+  const [reloadKey, setReloadKey] = useState(0);
+
   useEffect(() => {
     api<AppMeResponse>('/api/auth/me').then(data => {
       // Одна компания и пользователь не открыл выбор сам — сразу в неё.
-      if (data.companies.length === 1 && !error && !choose) {
+      if (!data.passwordChangeRequired && data.companies.length === 1 && !error && !choose) {
         window.location.href = originOf(data.companies[0]!.slug, baseDomain) + '/api/auth/handoff/start';
         return;
       }
@@ -29,7 +32,7 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
       if (e instanceof ApiError && e.status === 401) router.replace('/login');
       else setFailed(true);
     });
-  }, [baseDomain, error, choose, router]);
+  }, [baseDomain, error, choose, router, reloadKey]);
 
   async function logout() {
     try { await post('/api/auth/logout', {}, { retry: false }); } finally { router.replace('/login'); }
@@ -37,6 +40,8 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
 
   if (failed) return <Centered><Notice>Сервис временно недоступен. Обновите страницу позже.</Notice></Centered>;
   if (!me) return <Loading />;
+  // Вход временным паролем (B8): сначала постоянный пароль, потом список компаний.
+  if (me.passwordChangeRequired) return <PasswordForm forced onDone={() => { setMe(null); setReloadKey(k => k + 1); }} />;
   return (
     <Centered>
       <Brand />

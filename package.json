@@ -21,6 +21,7 @@
     "db:setup": "node scripts/db.mjs setup",
     "db:seed": "node scripts/db.mjs seed",
     "db:drift": "node scripts/db.mjs drift",
+    "platform:admin": "node scripts/db.mjs platform-admin",
     "stack:up": "docker compose up --build -d --wait",
     "stack:down": "docker compose down",
     "smoke": "node scripts/smoke.mjs"

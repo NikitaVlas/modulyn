@@ -12,14 +12,16 @@ import { AuthStore } from './database/auth-store.service.js';
 import { DatabaseService } from './database/database.service.js';
 import { TenantDb } from './database/tenant-db.service.js';
 import { TenantDirectory } from './database/tenant-directory.service.js';
+import { PlatformStore } from './database/platform-store.service.js';
 import { HealthController } from './health/health.controller.js';
+import { PlatformTenantsController } from './platform/tenants.controller.js';
 import { TenancyMiddleware } from './tenancy/tenancy.middleware.js';
 import { TenantController } from './tenancy/tenant.controller.js';
 
 @Module({
-  controllers: [HealthController, TenantController, AuthController],
+  controllers: [HealthController, TenantController, AuthController, PlatformTenantsController],
   providers: [
-    DatabaseService, TenantDb, TenantDirectory, TenancyMiddleware,
+    DatabaseService, TenantDb, TenantDirectory, TenancyMiddleware, PlatformStore,
     AuthStore, PasswordService, TokensService, SessionsService, ThrottleService, GoogleService, OriginMiddleware,
     // Все маршруты по умолчанию требуют входа; открытые помечены @Public() (подшаг 3.5).
     { provide: APP_GUARD, useClass: AuthGuard },

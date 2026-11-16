@@ -246,12 +246,15 @@ describe('2.5 row-level security and the runtime role', () => {
     } finally { await c.end(); }
   });
 
-  test('history and audit are append-only, global tables are read-only for the runtime role', async () => {
+  test('history and audit are append-only; the runtime role cannot change subdomains or delete companies', async () => {
     await assert.rejects(tenantDb.runInTenant(nova.id, tx => tx.leadStatusHistory.updateMany({ data: { newStatus: 'CLOSED' } })));
     await assert.rejects(tenantDb.runInTenant(nova.id, tx => tx.leadStatusHistory.deleteMany()));
     const c = await rawClient();
     try {
-      await assert.rejects(c.query("UPDATE tenants SET status = 'ACTIVE'"), e => e.code === '42501');
+      // Phase 4 (B4, B5): название и статус меняет платформа; поддомен — никто, удаление компаний — тоже.
+      await assert.rejects(c.query("UPDATE tenants SET slug = 'hijack' WHERE slug = 'nova'"), e => e.code === '42501');
+      await assert.rejects(c.query("DELETE FROM tenants WHERE slug = 'nova'"), e => e.code === '42501');
+      await assert.rejects(c.query("UPDATE modules SET name = 'x'"), e => e.code === '42501');
       await assert.rejects(c.query('SELECT * FROM _prisma_migrations'), e => ['42501', '42P01'].includes(e.code));
     } finally { await c.end(); }
   });

@@ -26,7 +26,20 @@ export type RotationResult =
   | { status: 'reused' }     // старый токен предъявлен повторно после окна: цепочка отозвана
   | { status: 'invalid' };   // неизвестен, истёк или отозван
 
-export interface LoginUser { id: string; email: string; name: string; passwordHash: string | null; isActive: boolean }
+export interface LoginUser {
+  id: string; email: string; name: string; passwordHash: string | null; isActive: boolean;
+  /** B8: вход временным паролем — до смены пароля доступ ограничен. */
+  passwordChangeRequired: boolean; tempPasswordExpiresAt: Date | null;
+}
+export interface LoginAdmin extends LoginUser {
+  passwordHash: string;
+  totpSecretEnc: string | null; totpEnabledAt: Date | null; totpLastStep: bigint | null;
+}
+/** Состояние аккаунта для проверки каждого запроса: ограничения доступа (B8, B2). */
+export interface AccountState { passwordChangeRequired: boolean; mfaSetupRequired: boolean }
+
+const USER_SELECT = { id: true, email: true, name: true, passwordHash: true, isActive: true, passwordChangeRequired: true, tempPasswordExpiresAt: true } as const;
+const ADMIN_SELECT = { ...USER_SELECT, totpSecretEnc: true, totpEnabledAt: true, totpLastStep: true } as const;
 export interface CompanyEntry { slug: string; displayName: string; role: TenantRole }
 
 /** Минимальный общий интерфейс делегатов Prisma для таблиц сессий (поля совпадают, кроме владельца). */
@@ -70,35 +83,86 @@ export class AuthStore {
   // ───────────── Аккаунты ─────────────
 
   async findUserByEmail(email: string): Promise<LoginUser | null> {
-    return (await this.client()).user.findUnique({
-      where: { email }, select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
-    });
+    return (await this.client()).user.findUnique({ where: { email }, select: USER_SELECT });
   }
 
   async findUserById(id: string): Promise<LoginUser | null> {
-    return (await this.client()).user.findUnique({
-      where: { id }, select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
-    });
+    return (await this.client()).user.findUnique({ where: { id }, select: USER_SELECT });
   }
 
+  /** Новый постоянный пароль снимает признак временного (B8). */
   async setUserPassword(userId: string, passwordHash: string): Promise<void> {
-    await (await this.client()).user.update({ where: { id: userId }, data: { passwordHash } });
-  }
-
-  async findPlatformAdminByEmail(email: string) {
-    return (await this.client()).platformAdmin.findUnique({
-      where: { email }, select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
+    await (await this.client()).user.update({
+      where: { id: userId }, data: { passwordHash, passwordChangeRequired: false, tempPasswordExpiresAt: null },
     });
   }
 
-  async findPlatformAdminById(id: string) {
-    return (await this.client()).platformAdmin.findUnique({
-      where: { id }, select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
-    });
+  async findPlatformAdminByEmail(email: string): Promise<LoginAdmin | null> {
+    return (await this.client()).platformAdmin.findUnique({ where: { email }, select: ADMIN_SELECT });
+  }
+
+  async findPlatformAdminById(id: string): Promise<LoginAdmin | null> {
+    return (await this.client()).platformAdmin.findUnique({ where: { id }, select: ADMIN_SELECT });
   }
 
   async setPlatformAdminPassword(adminId: string, passwordHash: string): Promise<void> {
-    await (await this.client()).platformAdmin.update({ where: { id: adminId }, data: { passwordHash } });
+    await (await this.client()).platformAdmin.update({
+      where: { id: adminId }, data: { passwordHash, passwordChangeRequired: false, tempPasswordExpiresAt: null },
+    });
+  }
+
+  // ───────────── Второй фактор платформы (B2, B10) ─────────────
+
+  /** Новый секрет при настройке. Пока второй фактор не подтверждён кодом, его можно перевыпускать. */
+  async setPendingTotp(adminId: string, secretEnc: string): Promise<boolean> {
+    const { count } = await (await this.client()).platformAdmin.updateMany({
+      where: { id: adminId, totpEnabledAt: null }, data: { totpSecretEnc: secretEnc, totpLastStep: null },
+    });
+    return count === 1;
+  }
+
+  /** Подтверждение настройки: включает второй фактор и заменяет коды восстановления. */
+  async enableTotp(adminId: string, step: number, recoveryHashes: string[]): Promise<boolean> {
+    const client = await this.client();
+    return client.$transaction(async tx => {
+      const { count } = await tx.platformAdmin.updateMany({
+        where: { id: adminId, totpEnabledAt: null, totpSecretEnc: { not: null } },
+        data: { totpEnabledAt: new Date(), totpLastStep: BigInt(step) },
+      });
+      if (count !== 1) return false;
+      await tx.platformRecoveryCode.deleteMany({ where: { adminId } });
+      await tx.platformRecoveryCode.createMany({ data: recoveryHashes.map(codeHash => ({ adminId, codeHash })) });
+      return true;
+    });
+  }
+
+  /** Атомарно принимает шаг TOTP: тот же или более ранний шаг повторно не пройдёт даже при параллельных запросах. */
+  async acceptTotpStep(adminId: string, step: number): Promise<boolean> {
+    const { count } = await (await this.client()).platformAdmin.updateMany({
+      where: { id: adminId, totpEnabledAt: { not: null }, OR: [{ totpLastStep: null }, { totpLastStep: { lt: BigInt(step) } }] },
+      data: { totpLastStep: BigInt(step) },
+    });
+    return count === 1;
+  }
+
+  async useRecoveryCode(adminId: string, codeHash: string): Promise<boolean> {
+    const { count } = await (await this.client()).platformRecoveryCode.updateMany({
+      where: { adminId, codeHash, usedAt: null }, data: { usedAt: new Date() },
+    });
+    return count === 1;
+  }
+
+  async remainingRecoveryCodes(adminId: string): Promise<number> {
+    return (await this.client()).platformRecoveryCode.count({ where: { adminId, usedAt: null } });
+  }
+
+  // ───────────── Аудит платформы (B7) ─────────────
+
+  /** metadata — только названия полей и технические признаки, без персональных данных и секретов. */
+  async platformAudit(action: string, actorAdminId: string | null, targetTenantId?: string, metadata?: Record<string, string | number | boolean | string[]>): Promise<void> {
+    await (await this.client()).platformAuditLog.create({
+      data: { action, actorAdminId, targetTenantId: targetTenantId ?? null, ...(metadata ? { metadata } : {}) },
+    });
   }
 
   // ───────────── Google ─────────────
@@ -106,7 +170,7 @@ export class AuthStore {
   async findUserByGoogleSubject(subject: string): Promise<LoginUser | null> {
     const identity = await (await this.client()).userIdentity.findUnique({
       where: { provider_providerSubject: { provider: 'GOOGLE', providerSubject: subject } },
-      select: { id: true, user: { select: { id: true, email: true, name: true, passwordHash: true, isActive: true } } },
+      select: { id: true, user: { select: USER_SELECT } },
     });
     if (!identity) return null;
     await (await this.client()).userIdentity.update({ where: { id: identity.id }, data: { lastUsedAt: new Date() } });
@@ -156,38 +220,39 @@ export class AuthStore {
   }
 
   /** Сессия центрального входа действительна и аккаунт активен. */
-  async validAppSession(sessionId: string, userId: string): Promise<boolean> {
+  async validAppSession(sessionId: string, userId: string): Promise<AccountState | null> {
     const now = new Date();
     const row = await (await this.client()).userSession.findFirst({
       where: { id: sessionId, userId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now }, user: { isActive: true } },
-      select: { id: true },
+      select: { user: { select: { passwordChangeRequired: true } } },
     });
-    return row !== null;
+    return row ? { passwordChangeRequired: row.user.passwordChangeRequired, mfaSetupRequired: false } : null;
   }
 
-  async validPlatformSession(sessionId: string, adminId: string): Promise<boolean> {
+  /** Сессия платформы действительна; ограничения: смена временного пароля, затем настройка второго фактора (B2, B8). */
+  async validPlatformSession(sessionId: string, adminId: string): Promise<AccountState | null> {
     const now = new Date();
     const row = await (await this.client()).platformSession.findFirst({
       where: { id: sessionId, adminId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now }, admin: { isActive: true } },
-      select: { id: true },
+      select: { admin: { select: { passwordChangeRequired: true, totpEnabledAt: true } } },
     });
-    return row !== null;
+    return row ? { passwordChangeRequired: row.admin.passwordChangeRequired, mfaSetupRequired: row.admin.totpEnabledAt === null } : null;
   }
 
   /**
    * Сессия компании действительна: не отозвана и не истекла, участие в ЭТОЙ компании активно, аккаунт активен.
    * Возвращает актуальную роль из memberships (роль не хранится в токене).
    */
-  async tenantSessionRole(tenantId: string, sessionId: string, userId: string): Promise<TenantRole | null> {
+  async tenantSessionRole(tenantId: string, sessionId: string, userId: string): Promise<{ role: TenantRole; passwordChangeRequired: boolean } | null> {
     const now = new Date();
     const row = await this.tenantDb.runInTenant(tenantId, tx => tx.tenantSession.findFirst({
       where: {
         id: sessionId, userId, tenantId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now },
         membership: { isActive: true, user: { isActive: true } },
       },
-      select: { membership: { select: { role: true } } },
+      select: { membership: { select: { role: true, user: { select: { passwordChangeRequired: true } } } } },
     }));
-    return row?.membership.role ?? null;
+    return row ? { role: row.membership.role, passwordChangeRequired: row.membership.user.passwordChangeRequired } : null;
   }
 
   async rotateAppOrPlatform(kind: 'app' | 'platform', tokenHash: string, next: (record: { familyId: string; absoluteExpiresAt: Date }) => Omit<NewSession, 'ownerId' | 'familyId' | 'absoluteExpiresAt'>, graceMs: number): Promise<RotationResult> {

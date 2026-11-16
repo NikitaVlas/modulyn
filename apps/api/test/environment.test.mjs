@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEnvironment } from '../dist/config/environment.js';
-const secrets = { JWT_SECRET_TENANT: 't'.repeat(32), JWT_SECRET_APP: 'a'.repeat(32), JWT_SECRET_PLATFORM: 'p'.repeat(32) };
+const secrets = { JWT_SECRET_TENANT: 't'.repeat(32), JWT_SECRET_APP: 'a'.repeat(32), JWT_SECRET_PLATFORM: 'p'.repeat(32), PLATFORM_TOTP_KEY: 'ab'.repeat(32) };
 const base = { DATABASE_URL: 'postgresql://test:local@localhost:5432/test', ...secrets };
 test('valid configuration uses development defaults', () => { assert.equal(parseEnvironment(base).port, 3001); });
 test('missing database URL fails closed', () => { assert.throws(() => parseEnvironment({}), /DATABASE_URL is required/); });
@@ -47,4 +47,9 @@ test('dev proxy host trust is opt-in and forbidden in production', () => {
   assert.equal(parseEnvironment(base).trustDevProxyHost, false);
   assert.equal(parseEnvironment({ ...base, TRUST_DEV_PROXY_HOST: 'true' }).trustDevProxyHost, true);
   assert.throws(() => parseEnvironment({ ...base, NODE_ENV: 'production', TRUST_DEV_PROXY_HOST: 'true' }), /TRUST_DEV_PROXY_HOST/);
+});
+test('the TOTP encryption key is required and must be 32 bytes in hex', () => {
+  assert.throws(() => parseEnvironment({ ...base, PLATFORM_TOTP_KEY: undefined }), /PLATFORM_TOTP_KEY/);
+  assert.throws(() => parseEnvironment({ ...base, PLATFORM_TOTP_KEY: 'ab'.repeat(16) }), /PLATFORM_TOTP_KEY/);
+  assert.equal(parseEnvironment(base).totpKey.length, 32);
 });

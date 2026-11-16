@@ -6,6 +6,7 @@ import type { ContextKind } from '../tenancy/request-context.js';
 import { ACCESS_TTL_MS, CLOCK_TOLERANCE_S } from './auth.constants.js';
 
 export interface AccessClaims { sub: string; sid: string; tid?: string }
+export type StateAudience = 'oidc-state' | 'mfa-pending';
 
 const ISSUER = 'modulyn';
 
@@ -64,16 +65,19 @@ export class TokensService {
     return createHmac('sha256', this.hmacKey).update(value).digest('hex');
   }
 
-  /** Подписанное короткоживущее состояние (Google-вход) для HttpOnly cookie. */
-  signState(payload: Record<string, string>, ttlMs: number): Promise<string> {
-    return new SignJWT(payload).setProtectedHeader({ alg: 'HS256' }).setIssuer(ISSUER).setAudience('oidc-state')
+  /**
+   * Подписанное короткоживущее состояние для HttpOnly cookie: 'oidc-state' — Google-вход,
+   * 'mfa-pending' — пароль администратора платформы проверен, ждём второй фактор (B10). Разные aud не взаимозаменяемы.
+   */
+  signState(payload: Record<string, string>, ttlMs: number, audience: StateAudience = 'oidc-state'): Promise<string> {
+    return new SignJWT(payload).setProtectedHeader({ alg: 'HS256' }).setIssuer(ISSUER).setAudience(audience)
       .setExpirationTime(Math.floor((Date.now() + ttlMs) / 1000)).sign(this.stateKey);
   }
 
-  async verifyState(token: string | undefined): Promise<Record<string, unknown> | null> {
+  async verifyState(token: string | undefined, audience: StateAudience = 'oidc-state'): Promise<Record<string, unknown> | null> {
     if (!token || token.length > 4096) return null;
     try {
-      return (await jwtVerify(token, this.stateKey, { issuer: ISSUER, audience: 'oidc-state', algorithms: ['HS256'] })).payload;
+      return (await jwtVerify(token, this.stateKey, { issuer: ISSUER, audience, algorithms: ['HS256'] })).payload;
     } catch { return null; }
   }
 }

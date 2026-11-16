@@ -1,5 +1,5 @@
 import { SetMetadata, createParamDecorator } from '@nestjs/common';
-import { currentRequestContext, type AppPrincipal, type ContextKind, type PlatformPrincipal, type TenantPrincipal, type TenantRole } from '../tenancy/request-context.js';
+import { currentRequestContext, type AppPrincipal, type ContextKind, type PlatformPrincipal, type Restriction, type TenantPrincipal, type TenantRole } from '../tenancy/request-context.js';
 
 export const PUBLIC_KEY = 'modulyn:public';
 export const CONTEXTS_KEY = 'modulyn:contexts';
@@ -16,6 +16,13 @@ export const Contexts = (...kinds: ContextKind[]) => SetMetadata(CONTEXTS_KEY, k
 
 /** Роли в компании, которым разрешён маршрут (только tenant-контекст). Нет роли — 403. */
 export const Roles = (...roles: TenantRole[]) => SetMetadata(ROLES_KEY, roles);
+
+export const ALLOW_RESTRICTED_KEY = 'modulyn:allow-restricted';
+/**
+ * Маршрут доступен сессии с незавершённым обязательным шагом (временный пароль, настройка второго фактора).
+ * Без декоратора такая сессия получает 403 с кодом PASSWORD_CHANGE_REQUIRED или MFA_SETUP_REQUIRED.
+ */
+export const AllowRestricted = (...restrictions: Restriction[]) => SetMetadata(ALLOW_RESTRICTED_KEY, restrictions);
 
 /** Проверенный guard'ом пользователь компании. */
 export const CurrentTenantUser = createParamDecorator((): TenantPrincipal => {

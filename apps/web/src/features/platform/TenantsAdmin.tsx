@@ -1,0 +1,179 @@
+'use client';
+
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import type { CreateTenantResponse, PlatformTenant } from '@modulyn/contracts';
+import { Button, Field, Notice } from '../../components/ui';
+import { ApiError, api, originOf, post } from '../auth/api';
+
+const STATUS: Record<PlatformTenant['status'], { text: string; style: string }> = {
+  ACTIVE: { text: 'Активна', style: 'bg-teal-50 text-teal-800' },
+  SUSPENDED: { text: 'Отключена', style: 'bg-slate-100 text-slate-600' },
+};
+
+function errorText(e: unknown): string {
+  return e instanceof ApiError ? e.message : 'Не удалось выполнить действие';
+}
+
+/**
+ * Компании платформы (4.2–4.4): список, создание с первым администратором, названия, отключение и включение.
+ * Администратор платформы видит только настройки компаний и число участников — без лидов и персональных данных (B6).
+ */
+export function TenantsAdmin({ baseDomain }: { baseDomain: string }) {
+  const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<CreateTenantResponse | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    api<PlatformTenant[]>('/api/platform/tenants').then(list => { setTenants(list); setError(null); }, e => setError(errorText(e)));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  const current = tenants?.find(t => t.id === selected) ?? null;
+
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Компании</h1>
+        {!creating && <div className="w-48"><Button onClick={() => { setCreating(true); setCreated(null); setSelected(null); }}>Новая компания</Button></div>}
+      </div>
+      {error && <div className="mb-4"><Notice>{error}</Notice></div>}
+      {created && <CreatedNotice result={created} baseDomain={baseDomain} onClose={() => setCreated(null)} />}
+      {creating && <CreateForm onCancel={() => setCreating(false)} onCreated={r => { setCreating(false); setCreated(r); reload(); }} />}
+      {current && <TenantDetails tenant={current} baseDomain={baseDomain} onClose={() => setSelected(null)} onChanged={reload} />}
+
+      {!tenants ? <p className="text-sm text-slate-500">Загрузка…</p> : tenants.length === 0 ? (
+        <p className="text-sm text-slate-600">Компаний пока нет.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+              <tr><th className="px-4 py-3">Компания</th><th className="px-4 py-3">Поддомен</th><th className="px-4 py-3">Статус</th><th className="px-4 py-3">Участники</th><th className="px-4 py-3">Создана</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {tenants.map(t => (
+                <tr key={t.id} className="cursor-pointer hover:bg-slate-50" onClick={() => { setSelected(t.id); setCreating(false); }}>
+                  <td className="px-4 py-3"><p className="font-medium">{t.displayName}</p><p className="text-xs text-slate-500">{t.name}</p></td>
+                  <td className="px-4 py-3 font-mono text-xs">{t.slug}.{baseDomain}</td>
+                  <td className="px-4 py-3"><span className={`rounded px-2 py-0.5 text-xs ${STATUS[t.status].style}`}>{STATUS[t.status].text}</span></td>
+                  <td className="px-4 py-3">{t.activeMembers}</td>
+                  <td className="px-4 py-3 text-slate-600">{new Date(t.createdAt).toLocaleDateString('ru-RU')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 className="mb-4 text-lg font-semibold">{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (r: CreateTenantResponse) => void }) {
+  const [form, setForm] = useState({ name: '', displayName: '', slug: '', adminEmail: '', adminName: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [key]: e.target.value });
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try { onCreated(await post<CreateTenantResponse>('/api/platform/tenants', form)); }
+    catch (e) { setError(errorText(e)); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <Panel title="Новая компания">
+      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+        {error && <div className="sm:col-span-2"><Notice>{error}</Notice></div>}
+        <Field label="Название (юридическое)" required maxLength={200} value={form.name} onChange={set('name')} />
+        <Field label="Имя в интерфейсе, например «Nova CRM»" required maxLength={200} value={form.displayName} onChange={set('displayName')} />
+        <div className="sm:col-span-2">
+          <Field label="Поддомен (нельзя изменить после создания)" required maxLength={63} pattern="[a-z0-9]([a-z0-9-]*[a-z0-9])?" placeholder="nova" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase() })} />
+        </div>
+        <Field label="Email первого администратора" type="email" required maxLength={320} value={form.adminEmail} onChange={set('adminEmail')} />
+        <Field label="Имя первого администратора" required maxLength={200} value={form.adminName} onChange={set('adminName')} />
+        <div className="flex gap-3 sm:col-span-2">
+          <div className="w-48"><Button type="submit" disabled={busy}>{busy ? 'Создание…' : 'Создать'}</Button></div>
+          <div className="w-32"><Button type="button" variant="secondary" onClick={onCancel}>Отмена</Button></div>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+/** Временный пароль показывается один раз (B3, B8): после закрытия его не восстановить. */
+function CreatedNotice({ result, baseDomain, onClose }: { result: CreateTenantResponse; baseDomain: string; onClose: () => void }) {
+  return (
+    <Panel title={`Компания «${result.tenant.displayName}» создана`}>
+      <p className="text-sm text-slate-700">Адрес: <span className="font-mono">{originOf(result.tenant.slug, baseDomain)}</span></p>
+      {result.temporaryPassword ? (
+        <div className="mt-4 space-y-2 text-sm">
+          <p>Создан аккаунт администратора <b>{result.firstAdmin.email}</b>. Передайте ему временный пароль — он действует 7 дней, при первом входе его нужно сменить:</p>
+          <p className="rounded-md bg-slate-100 px-3 py-2 font-mono text-base">{result.temporaryPassword}</p>
+          <p className="text-red-700">Пароль показывается только сейчас.</p>
+          <div className="w-48"><Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(result.temporaryPassword ?? '')}>Скопировать</Button></div>
+        </div>
+      ) : (
+        <p className="mt-4 text-sm">Аккаунт <b>{result.firstAdmin.email}</b> уже существовал — он стал администратором компании и входит своим паролем.</p>
+      )}
+      <div className="mt-4 w-32"><Button onClick={onClose}>Готово</Button></div>
+    </Panel>
+  );
+}
+
+function TenantDetails({ tenant, baseDomain, onClose, onChanged }: { tenant: PlatformTenant; baseDomain: string; onClose: () => void; onChanged: () => void }) {
+  const [name, setName] = useState(tenant.name);
+  const [displayName, setDisplayName] = useState(tenant.displayName);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  async function patch(body: Record<string, string>, done: string) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api<PlatformTenant>(`/api/platform/tenants/${tenant.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+      setMessage({ tone: 'info', text: done });
+      onChanged();
+    } catch (e) { setMessage({ tone: 'error', text: errorText(e) }); }
+    finally { setBusy(false); }
+  }
+
+  function toggleStatus() {
+    if (tenant.status === 'ACTIVE') {
+      if (!window.confirm(`Отключить «${tenant.displayName}»? Поддомен сразу перестанет открываться, все пользователи выйдут из системы. Данные сохранятся.`)) return;
+      void patch({ status: 'SUSPENDED' }, 'Компания отключена');
+    } else {
+      void patch({ status: 'ACTIVE' }, 'Компания включена. Пользователи входят заново.');
+    }
+  }
+
+  return (
+    <Panel title={tenant.displayName}>
+      <form onSubmit={e => { e.preventDefault(); void patch({ name, displayName }, 'Сохранено'); }} className="grid gap-4 sm:grid-cols-2">
+        {message && <div className="sm:col-span-2"><Notice tone={message.tone}>{message.text}</Notice></div>}
+        <Field label="Название (юридическое)" required maxLength={200} value={name} onChange={e => setName(e.target.value)} />
+        <Field label="Имя в интерфейсе" required maxLength={200} value={displayName} onChange={e => setDisplayName(e.target.value)} />
+        <p className="text-sm text-slate-600 sm:col-span-2">
+          Поддомен: <span className="font-mono">{tenant.slug}.{baseDomain}</span> (не меняется) · Участников: {tenant.activeMembers} · Статус: {STATUS[tenant.status].text}
+        </p>
+        <div className="flex flex-wrap gap-3 sm:col-span-2">
+          <div className="w-40"><Button type="submit" disabled={busy}>Сохранить</Button></div>
+          <div className="w-40"><Button type="button" variant="secondary" disabled={busy} onClick={toggleStatus}>{tenant.status === 'ACTIVE' ? 'Отключить' : 'Включить'}</Button></div>
+          <div className="w-32"><Button type="button" variant="secondary" onClick={onClose}>Закрыть</Button></div>
+        </div>
+      </form>
+    </Panel>
+  );
+}

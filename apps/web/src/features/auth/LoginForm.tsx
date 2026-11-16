@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import type { AuthProvidersResponse, TenantInfoResponse } from '@modulyn/contracts';
+import { useRouter } from 'next/navigation';
+import type { AuthProvidersResponse, LoginResponse, TenantInfoResponse } from '@modulyn/contracts';
 import { Brand, Button, Card, Centered, Field, Notice } from '../../components/ui';
 import { ApiError, api, originOf, post } from './api';
 
@@ -25,6 +26,9 @@ export function LoginForm({ context, baseDomain, tenant, error }: Props) {
   const [message, setMessage] = useState<string | null>(error ? ERRORS[error] ?? null : null);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [google, setGoogle] = useState(false);
+  const [mfa, setMfa] = useState(false);
+  const [code, setCode] = useState('');
+  const router = useRouter();
 
   useEffect(() => {
     if (context !== 'app') return;
@@ -40,7 +44,9 @@ export function LoginForm({ context, baseDomain, tenant, error }: Props) {
     setBusy(true);
     setMessage(null);
     try {
-      await post('/api/auth/login', { email, password }, { retry: false });
+      const result = await post<LoginResponse>('/api/auth/login', { email, password }, { retry: false });
+      // Администратор платформы с настроенным вторым фактором: сессии ещё нет, нужен код (B10).
+      if (result.mfaRequired) { setMfa(true); setBusy(false); return; }
       window.location.assign(next());
     } catch (e) {
       setMessage(e instanceof ApiError && (e.status === 401 || e.status === 429 || e.status === 400)
@@ -50,7 +56,37 @@ export function LoginForm({ context, baseDomain, tenant, error }: Props) {
     }
   }
 
+  async function submitCode(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      await post('/api/auth/mfa', { code: code.trim() }, { retry: false });
+      router.replace('/');
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && e.message !== 'Неверный код') { setMfa(false); setPassword(''); }
+      setMessage(e instanceof ApiError && e.status === 429 ? e.message : 'Неверный код. Если время вышло — войдите заново.');
+      setBusy(false);
+    }
+  }
+
   const title = context === 'platform' ? 'Администрирование платформы' : companyName ? `Вход в ${companyName}` : 'Вход в CRM';
+  if (mfa) {
+    return (
+      <Centered>
+        <Brand />
+        <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight">Код подтверждения</h1>
+        <p className="mb-6 text-sm text-slate-600">Введите 6-значный код из приложения-аутентификатора или один из кодов восстановления.</p>
+        <Card>
+          <form onSubmit={submitCode} className="space-y-4">
+            {message && <Notice>{message}</Notice>}
+            <Field label="Код" autoComplete="one-time-code" required maxLength={16} value={code} onChange={e => setCode(e.target.value)} />
+            <Button type="submit" disabled={busy}>{busy ? 'Проверка…' : 'Подтвердить'}</Button>
+          </form>
+        </Card>
+      </Centered>
+    );
+  }
   return (
     <Centered>
       <Brand />

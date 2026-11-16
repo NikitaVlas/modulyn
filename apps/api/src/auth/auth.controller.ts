@@ -5,15 +5,17 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import type {
-  AppMeResponse, AuthProvidersResponse, PlatformMeResponse, TenantInfoResponse, TenantMeResponse,
+  AppMeResponse, AuthProvidersResponse, LoginResponse, MfaEnableResponse, MfaSetupResponse, PlatformMeResponse,
+  TenantInfoResponse, TenantMeResponse,
 } from '@modulyn/contracts';
 import { originFor, parseEnvironment } from '../config/environment.js';
-import { AuthStore } from '../database/auth-store.service.js';
+import { AuthStore, type LoginAdmin } from '../database/auth-store.service.js';
 import { SLUG_PATTERN } from '../tenancy/hostname.js';
 import { currentRequestContext, type RequestContext } from '../tenancy/request-context.js';
-import { HANDOFF_CODE_TTL_MS, HANDOFF_STATE_TTL_MS, OIDC_STATE_TTL_MS, PASSWORD_MAX } from './auth.constants.js';
+import { HANDOFF_CODE_TTL_MS, HANDOFF_STATE_TTL_MS, MFA_PENDING_TTL_MS, OIDC_STATE_TTL_MS, PASSWORD_MAX } from './auth.constants.js';
 import { clearCookie, readCookie, setCookie } from './cookies.js';
-import { Contexts, Public } from './decorators.js';
+import { AllowRestricted, Contexts, Public } from './decorators.js';
+import { base32Encode, newRecoveryCodes, newTotpSecret, normalizeRecoveryCode, openSecret, otpauthUri, sealSecret, verifyTotp } from './totp.js';
 import { GoogleService } from './google.service.js';
 import { PasswordService, passwordPolicyError } from './password.service.js';
 import { SessionsService } from './sessions.service.js';
@@ -82,7 +84,7 @@ export class AuthController {
   // ───────────── Вход по паролю (3.2, 3.3) ─────────────
 
   @Public() @Contexts('app', 'platform') @Post('login') @HttpCode(200)
-  async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<{ ok: true }> {
+  async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<LoginResponse> {
     const ctx = context();
     const email = normalizeEmail(text(body, 'email', 320));
     const password = text(body, 'password', 1024);
@@ -95,15 +97,96 @@ export class AuthController {
     const valid = account?.passwordHash
       ? await this.passwords.verify(account.passwordHash, password)
       : await this.passwords.verifyDummy(password);
-    // Заблокированный аккаунт получает тот же ответ, что и неверный пароль (A8).
-    if (!account || !valid || !account.isActive) {
+    // Временный пароль действует 7 дней (B8). Просроченный, заблокированный аккаунт и неверный пароль — один ответ (A8).
+    const tempExpired = account?.passwordChangeRequired === true && account.tempPasswordExpiresAt !== null && account.tempPasswordExpiresAt < new Date();
+    if (!account || !valid || !account.isActive || tempExpired) {
       await this.throttle.failed(scope, ctx.ip, email);
+      if (ctx.kind === 'platform' && account) await this.store.platformAudit('admin.login_failed', account.id);
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
     await this.throttle.succeeded(scope, ctx.ip, email);
-    if (ctx.kind === 'platform') await this.sessions.startPlatform(res, account.id);
-    else await this.sessions.startApp(res, account.id);
+    if (ctx.kind !== 'platform') {
+      await this.sessions.startApp(res, account.id);
+      return { ok: true };
+    }
+    // Платформа: при настроенном втором факторе сессии ещё нет — только короткая отметка «пароль проверен» (B10).
+    if ((account as LoginAdmin).totpEnabledAt) {
+      const pending = await this.tokens.signState({ sub: account.id }, MFA_PENDING_TTL_MS, 'mfa-pending');
+      setCookie(res, 'mfaPending', pending, this.sessions.secure, MFA_PENDING_TTL_MS);
+      return { ok: true, mfaRequired: true };
+    }
+    // Второй фактор ещё не настроен: сессия ограничена — смена временного пароля и настройка TOTP (guard).
+    await this.sessions.startPlatform(res, account.id);
+    await this.store.platformAudit('admin.login', account.id, undefined, { mfa: 'not-configured' });
     return { ok: true };
+  }
+
+  // ───────────── Второй фактор платформы (4.1, B2, B10) ─────────────
+
+  /** Второй шаг входа: 6-значный код из приложения или одноразовый код восстановления. */
+  @Public() @Contexts('platform') @Post('mfa') @HttpCode(200)
+  async verifyMfa(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ ok: true }> {
+    const ctx = context();
+    const pending = await this.tokens.verifyState(readCookie(req, 'mfaPending', this.sessions.secure), 'mfa-pending');
+    if (!pending || typeof pending.sub !== 'string') throw new UnauthorizedException('Войдите заново');
+    const adminId = pending.sub;
+    const code = text(body, 'code', 32).trim();
+    await this.throttle.before(res, 'mfa', ctx.ip, adminId);
+    const admin = await this.store.findPlatformAdminById(adminId);
+    let method: 'totp' | 'recovery' | null = null;
+    if (admin?.isActive && admin.totpEnabledAt && admin.totpSecretEnc) {
+      if (/^\d{6}$/.test(code)) {
+        const step = verifyTotp(openSecret(this.env.totpKey, admin.totpSecretEnc), code, admin.totpLastStep === null ? null : Number(admin.totpLastStep));
+        if (step !== null && await this.store.acceptTotpStep(adminId, step)) method = 'totp';
+      } else if (await this.store.useRecoveryCode(adminId, this.tokens.hash(normalizeRecoveryCode(code)))) {
+        method = 'recovery';
+      }
+    }
+    if (!method) {
+      await this.throttle.failed('mfa', ctx.ip, adminId);
+      await this.store.platformAudit('admin.mfa_failed', adminId);
+      throw new UnauthorizedException('Неверный код');
+    }
+    await this.throttle.succeeded('mfa', ctx.ip, adminId);
+    clearCookie(res, 'mfaPending', this.sessions.secure);
+    await this.sessions.startPlatform(res, adminId);
+    await this.store.platformAudit('admin.login', adminId, undefined, { mfa: method });
+    return { ok: true };
+  }
+
+  /** Настройка второго фактора: новый секрет (до подтверждения его можно перевыпустить). Показывается один раз. */
+  @AllowRestricted('mfa-setup') @Contexts('platform') @Post('mfa/setup') @HttpCode(200)
+  async setupMfa(): Promise<MfaSetupResponse> {
+    const ctx = context();
+    if (ctx.kind !== 'platform') throw new NotFoundException();
+    const admin = await this.store.findPlatformAdminById(ctx.principal!.adminId);
+    if (!admin || admin.totpEnabledAt) throw new ConflictException('Второй фактор уже настроен');
+    const secret = newTotpSecret();
+    if (!(await this.store.setPendingTotp(admin.id, sealSecret(this.env.totpKey, secret)))) throw new ConflictException('Второй фактор уже настроен');
+    return { otpauthUri: otpauthUri(secret, admin.email), secret: base32Encode(secret) };
+  }
+
+  /** Подтверждение настройки кодом из приложения: включает второй фактор и выдаёт 10 кодов восстановления. */
+  @AllowRestricted('mfa-setup') @Contexts('platform') @Post('mfa/enable') @HttpCode(200)
+  async enableMfa(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<MfaEnableResponse> {
+    const ctx = context();
+    if (ctx.kind !== 'platform') throw new NotFoundException();
+    const adminId = ctx.principal!.adminId;
+    const code = text(body, 'code', 16).trim();
+    await this.throttle.before(res, 'mfa', ctx.ip, adminId);
+    const admin = await this.store.findPlatformAdminById(adminId);
+    if (!admin || admin.totpEnabledAt || !admin.totpSecretEnc) throw new ConflictException('Сначала начните настройку');
+    const step = verifyTotp(openSecret(this.env.totpKey, admin.totpSecretEnc), code, null);
+    if (step === null) {
+      await this.throttle.failed('mfa', ctx.ip, adminId);
+      throw new BadRequestException('Код не подходит. Проверьте время на телефоне и введите новый код.');
+    }
+    const recoveryCodes = newRecoveryCodes();
+    const hashes = recoveryCodes.map(c => this.tokens.hash(normalizeRecoveryCode(c)));
+    if (!(await this.store.enableTotp(adminId, step, hashes))) throw new ConflictException('Второй фактор уже настроен');
+    await this.throttle.succeeded('mfa', ctx.ip, adminId);
+    await this.store.platformAudit('admin.mfa_enabled', adminId);
+    return { recoveryCodes };
   }
 
   // ───────────── Обновление и выход (3.4) ─────────────
@@ -140,7 +223,7 @@ export class AuthController {
   }
 
   /** Выход на всех устройствах: все сессии человека (или администратора платформы). */
-  @Post('logout-all') @HttpCode(204)
+  @AllowRestricted('password-change', 'mfa-setup') @Post('logout-all') @HttpCode(204)
   async logoutAll(@Res({ passthrough: true }) res: Response): Promise<void> {
     const ctx = context();
     this.sessions.clear(res);
@@ -150,25 +233,29 @@ export class AuthController {
 
   // ───────────── Текущий пользователь ─────────────
 
-  @Get('me')
+  @AllowRestricted('password-change', 'mfa-setup') @Get('me')
   async me(): Promise<AppMeResponse | TenantMeResponse | PlatformMeResponse> {
     const ctx = context();
     if (ctx.kind === 'platform') {
       const admin = await this.store.findPlatformAdminById(ctx.principal!.adminId);
       if (!admin) throw new UnauthorizedException();
-      return { admin: { name: admin.name, email: admin.email } };
+      return { admin: { name: admin.name, email: admin.email }, passwordChangeRequired: admin.passwordChangeRequired, mfaSetupRequired: admin.totpEnabledAt === null };
     }
     const user = await this.store.findUserById(ctx.principal!.userId);
     if (!user) throw new UnauthorizedException();
     const account = { name: user.name, email: user.email };
     if (ctx.kind === 'tenant') {
-      return { user: account, role: ctx.principal!.role, tenant: { slug: ctx.tenant.slug, displayName: ctx.tenant.displayName } };
+      return {
+        user: account, role: ctx.principal!.role, tenant: { slug: ctx.tenant.slug, displayName: ctx.tenant.displayName },
+        passwordChangeRequired: user.passwordChangeRequired,
+      };
     }
-    return { user: account, companies: await this.store.listCompanies(user.id) };
+    // До смены временного пароля список компаний не показывается — переход в них всё равно закрыт.
+    return { user: account, companies: user.passwordChangeRequired ? [] : await this.store.listCompanies(user.id), passwordChangeRequired: user.passwordChangeRequired };
   }
 
-  /** Смена своего пароля (A10). Остальные сессии отзываются, текущий браузер остаётся в системе. */
-  @Post('password') @HttpCode(204)
+  /** Смена своего пароля (A10). Остальные сессии отзываются, текущий браузер остаётся в системе. Снимает признак временного пароля (B8). */
+  @AllowRestricted('password-change', 'mfa-setup') @Post('password') @HttpCode(204)
   async changePassword(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<void> {
     const ctx = context();
     const current = text(body, 'currentPassword', 1024);
@@ -226,13 +313,18 @@ export class AuthController {
       res.redirect(303, this.appOrigin + '/');
       return;
     }
-    let principal = await this.sessions.authenticateApp(req);
+    let principal: { userId: string; sessionId: string } | null = await this.sessions.authenticateApp(req);
     if (!principal) {
       const refreshed = await this.sessions.refresh(req, res, 'app');
       if (refreshed.status === 'ok') principal = { userId: refreshed.ownerId, sessionId: refreshed.sessionId };
     }
     if (!principal) {
       res.redirect(303, `${this.appOrigin}/login?tenant=${encodeURIComponent(slug)}`);
+      return;
+    }
+    // Вход временным паролем: сначала смена пароля на app.<домен>, в компанию — после (B8).
+    if ((await this.store.findUserById(principal.userId))?.passwordChangeRequired) {
+      res.redirect(303, `${this.appOrigin}/`);
       return;
     }
     const tenant = await this.store.findActiveTenantBySlug(slug);

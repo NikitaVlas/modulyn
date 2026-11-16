@@ -19,6 +19,11 @@ export const THROTTLE_WINDOW_MS = 15 * MINUTE;
 export const THROTTLE_MAX_PER_IP = 20;
 export const THROTTLE_MAX_FAILED_PER_EMAIL = 10;
 
+/** Phase 4: пароль проверен, ждём второй фактор (B10); срок временного пароля (B8). */
+export const MFA_PENDING_TTL_MS = 5 * MINUTE;
+export const TEMP_PASSWORD_TTL_MS = 7 * DAY;
+export const TEMP_PASSWORD_LENGTH = 20;
+
 /** Политика паролей (A8). */
 export const PASSWORD_MIN = 12;
 export const PASSWORD_MAX = 128;

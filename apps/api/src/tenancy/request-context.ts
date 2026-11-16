@@ -13,10 +13,23 @@ export interface TenantRef {
 
 export type TenantRole = 'TENANT_ADMIN' | 'MANAGER';
 
+/**
+ * Ограничение сессии до завершения обязательных шагов (Phase 4):
+ * password-change — вход временным паролем (B8); mfa-setup — администратор платформы ещё не настроил второй фактор (B2).
+ * Пока ограничение есть, guard пропускает только маршруты с @AllowRestricted.
+ */
+export type Restriction = 'password-change' | 'mfa-setup';
+
 /** Кто выполняет запрос. Заполняется guard аутентификации после проверки токена и сессии в БД. */
-export interface TenantPrincipal { userId: string; sessionId: string; role: TenantRole }
-export interface AppPrincipal { userId: string; sessionId: string }
-export interface PlatformPrincipal { adminId: string; sessionId: string }
+export interface TenantPrincipal { userId: string; sessionId: string; role: TenantRole; restricted?: Restriction }
+export interface AppPrincipal { userId: string; sessionId: string; restricted?: Restriction }
+export interface PlatformPrincipal { adminId: string; sessionId: string; restricted?: Restriction }
+
+export function restrictionOf(state: { passwordChangeRequired: boolean; mfaSetupRequired: boolean }): Restriction | undefined {
+  if (state.passwordChangeRequired) return 'password-change';
+  if (state.mfaSetupRequired) return 'mfa-setup';
+  return undefined;
+}
 
 /**
  * host — исходный Host запроса (с портом), как его видел браузер; нужен для проверки Origin (A7).

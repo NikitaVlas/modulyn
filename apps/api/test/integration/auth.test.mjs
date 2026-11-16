@@ -248,7 +248,7 @@ describe('3.10 handoff from app.<domain> to a company subdomain', () => {
     const b = await loggedIn(MANAGER, 'nova');
     const nova = await b.get('nova', '/api/auth/me');
     assert.equal(nova.status, 200);
-    assert.deepEqual(nova.json, { user: { name: 'Shared Manager', email: MANAGER }, role: 'MANAGER', tenant: { slug: 'nova', displayName: 'Nova CRM' } });
+    assert.deepEqual(nova.json, { user: { name: 'Shared Manager', email: MANAGER }, role: 'MANAGER', tenant: { slug: 'nova', displayName: 'Nova CRM' }, passwordChangeRequired: false });
     assert.equal((await b.enter('company-b')).headers.location, '/');
     assert.equal((await b.get('company-b', '/api/auth/me')).json.tenant.slug, 'company-b');
     const admin = await loggedIn(NOVA_ADMIN, 'nova');
@@ -364,7 +364,7 @@ describe('3.5 a session works only where it was issued', () => {
     assert.equal((await b.login('platform@modulyn.example', SEED_PASSWORD, 'app')).status, 401);
     assert.equal((await b.login('platform@modulyn.example', SEED_PASSWORD, 'nova')).status, 404, 'no login on company hosts');
     assert.equal((await b.login('platform@modulyn.example', SEED_PASSWORD, 'admin')).status, 200);
-    assert.deepEqual((await b.get('admin', '/api/auth/me')).json, { admin: { name: 'Platform Admin', email: 'platform@modulyn.example' } });
+    assert.deepEqual((await b.get('admin', '/api/auth/me')).json, { admin: { name: 'Platform Admin', email: 'platform@modulyn.example' }, passwordChangeRequired: false, mfaSetupRequired: true });
   });
 
   test('disabling a membership closes that company at once, other companies keep working', async () => {

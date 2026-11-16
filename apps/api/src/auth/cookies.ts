@@ -6,10 +6,11 @@ import type { CookieOptions, Request, Response } from 'express';
  * физически не приходит на company-b.<домен>. С https имена получают префикс __Host-, который браузер принимает
  * только вместе с Secure, Path=/ и без Domain — то есть гарантирует эти свойства. Локально по http префикс невозможен.
  */
-export type CookieName = 'access' | 'refresh' | 'handoffState' | 'oidcState';
+export type CookieName = 'access' | 'refresh' | 'handoffState' | 'oidcState' | 'mfaPending';
 
-const BASE: Record<CookieName, string> = { access: 'mdl_at', refresh: 'mdl_rt', handoffState: 'mdl_hs', oidcState: 'mdl_oidc' };
+const BASE: Record<CookieName, string> = { access: 'mdl_at', refresh: 'mdl_rt', handoffState: 'mdl_hs', oidcState: 'mdl_oidc', mfaPending: 'mdl_mfa' };
 const SAME_SITE: Record<CookieName, 'lax' | 'strict'> = {
+  mfaPending: 'strict',   // второй шаг входа платформы — только со своей страницы
   access: 'lax',          // нужна при переходе по ссылке на поддомен
   refresh: 'strict',      // обновление — только запросом со своей страницы
   handoffState: 'lax',    // возвращается при переходе с app.<домен>

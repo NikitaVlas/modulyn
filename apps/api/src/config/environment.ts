@@ -25,6 +25,8 @@ export interface Environment {
   jwtSecrets: { tenant: string; app: string; platform: string };
   /** Вход через Google (3.9). Не задан — кнопка и маршруты Google выключены. */
   google: GoogleConfig | undefined;
+  /** B2: 32-байтный ключ AES-256-GCM для секретов TOTP администраторов платформы (64 hex-символа). */
+  totpKey: Buffer;
 }
 
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
@@ -81,9 +83,14 @@ export function parseEnvironment(env: NodeJS.ProcessEnv): Environment {
     google = { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET, issuer };
   }
 
+  if (!env.PLATFORM_TOTP_KEY || !/^[0-9a-f]{64}$/i.test(env.PLATFORM_TOTP_KEY)) {
+    throw new Error('PLATFORM_TOTP_KEY must be 64 hex characters (run pnpm env:init)');
+  }
+  const totpKey = Buffer.from(env.PLATFORM_TOTP_KEY, 'hex');
+
   return {
     port, databaseUrl: env.DATABASE_URL, nodeEnv: nodeEnv as Environment['nodeEnv'], appBaseDomain, trustDevProxyHost,
-    trustProxy, publicScheme, publicPort, jwtSecrets, google,
+    trustProxy, publicScheme, publicPort, jwtSecrets, google, totpKey,
   };
 }
 

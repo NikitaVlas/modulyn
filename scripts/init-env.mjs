@@ -35,6 +35,8 @@ const defaults = [
   ['JWT_SECRET_TENANT', () => randomBytes(32).toString('hex')],
   ['JWT_SECRET_APP', () => randomBytes(32).toString('hex')],
   ['JWT_SECRET_PLATFORM', () => randomBytes(32).toString('hex')],
+  // Phase 4: ключ шифрования секретов второго фактора администраторов платформы (B2). Потеря = заново настроить 2FA.
+  ['PLATFORM_TOTP_KEY', () => randomBytes(32).toString('hex')],
   // Публичные адреса для перенаправлений между app.<домен> и поддоменами компаний.
   ['PUBLIC_SCHEME', () => 'http'],
   ['PUBLIC_PORT', v => v.get('HTTP_PORT')],

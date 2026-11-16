@@ -32,6 +32,8 @@ const steps = {
   setup: () => { steps.roles(); steps.migrate(); },
   seed: () => { build(); run(['apps/api/scripts/seed.mjs']); },
   drift: () => run([prismaCli, 'migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--exit-code'], api),
+  // Администраторы платформы (Phase 4.1): pnpm platform:admin create --email ... --name ...
+  'platform-admin': () => { build(); run(['apps/api/scripts/platform-admin.mjs', ...process.argv.slice(3)]); },
 };
 
 const command = process.argv[2];

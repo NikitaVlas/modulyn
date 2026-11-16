@@ -1,6 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { Algorithm, hash, verify } from '@node-rs/argon2';
-import { PASSWORD_MAX, PASSWORD_MIN } from './auth.constants.js';
+import { PASSWORD_MAX, PASSWORD_MIN, TEMP_PASSWORD_LENGTH } from './auth.constants.js';
 
 /** Параметры OWASP для Argon2id: 19 MiB памяти, 2 прохода, 1 поток (A8). */
 const OPTIONS = { algorithm: Algorithm.Argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
@@ -28,6 +29,15 @@ export class PasswordService {
     await this.verify(await this.dummyHash, password);
     return false;
   }
+}
+
+/**
+ * Временный пароль (B8): 20 случайных символов без похожих (0/O, 1/l/I) — его передают человеку вручную.
+ * Алфавит из 32 символов: выбор по байту & 31 даёт равномерное распределение.
+ */
+export function temporaryPassword(length = TEMP_PASSWORD_LENGTH): string {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyz23456789A'; // ровно 32 символа
+  return Array.from(randomBytes(length), byte => alphabet[byte & 31]).join('');
 }
 
 /** Ошибка политики нового пароля или null. Без требований к составу символов (A8). */

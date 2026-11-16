@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { parseEnvironment } from '../config/environment.js';
 import { AuthStore } from '../database/auth-store.service.js';
-import type { AppPrincipal, PlatformPrincipal, TenantPrincipal, TenantRef } from '../tenancy/request-context.js';
+import { restrictionOf, type AppPrincipal, type PlatformPrincipal, type TenantPrincipal, type TenantRef } from '../tenancy/request-context.js';
 import { ACCESS_TTL_MS, REFRESH_ABSOLUTE_MS, REFRESH_IDLE_MS, ROTATION_GRACE_MS } from './auth.constants.js';
 import { clearCookie, readCookie, setCookie } from './cookies.js';
 import { TokensService } from './tokens.service.js';
@@ -79,20 +79,28 @@ export class SessionsService {
   async authenticateTenant(req: Request, tenant: TenantRef): Promise<TenantPrincipal | null> {
     const claims = await this.tokens.verifyAccess('tenant', readCookie(req, 'access', this.secure));
     if (!claims || claims.tid !== tenant.tenantId) return null; // токен другой компании
-    const role = await this.store.tenantSessionRole(tenant.tenantId, claims.sid, claims.sub);
-    return role ? { userId: claims.sub, sessionId: claims.sid, role } : null;
+    const state = await this.store.tenantSessionRole(tenant.tenantId, claims.sid, claims.sub);
+    if (!state) return null;
+    const restricted = restrictionOf({ passwordChangeRequired: state.passwordChangeRequired, mfaSetupRequired: false });
+    return { userId: claims.sub, sessionId: claims.sid, role: state.role, ...(restricted ? { restricted } : {}) };
   }
 
   async authenticateApp(req: Request): Promise<AppPrincipal | null> {
     const claims = await this.tokens.verifyAccess('app', readCookie(req, 'access', this.secure));
-    if (!claims || !(await this.store.validAppSession(claims.sid, claims.sub))) return null;
-    return { userId: claims.sub, sessionId: claims.sid };
+    if (!claims) return null;
+    const state = await this.store.validAppSession(claims.sid, claims.sub);
+    if (!state) return null;
+    const restricted = restrictionOf(state);
+    return { userId: claims.sub, sessionId: claims.sid, ...(restricted ? { restricted } : {}) };
   }
 
   async authenticatePlatform(req: Request): Promise<PlatformPrincipal | null> {
     const claims = await this.tokens.verifyAccess('platform', readCookie(req, 'access', this.secure));
-    if (!claims || !(await this.store.validPlatformSession(claims.sid, claims.sub))) return null;
-    return { adminId: claims.sub, sessionId: claims.sid };
+    if (!claims) return null;
+    const state = await this.store.validPlatformSession(claims.sid, claims.sub);
+    if (!state) return null;
+    const restricted = restrictionOf(state);
+    return { adminId: claims.sub, sessionId: claims.sid, ...(restricted ? { restricted } : {}) };
   }
 
   // ───────────── Ротация ─────────────
