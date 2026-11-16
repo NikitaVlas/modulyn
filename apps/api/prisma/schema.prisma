@@ -1,8 +1,9 @@
-// Modulyn — модель данных. Согласована 2026-11-16 (specs/phase2_design.md, редакция 2).
+// Modulyn — модель данных. Согласована 2026-11-16 (specs/phase2_design.md, редакция 2; specs/phase3_design.md, раздел 4).
 // В этом файле только таблицы, мигрированные на текущий момент (D4):
 // Phase 2 — tenants, users, memberships, platform_admins, modules, tenant_modules,
 // leads, lead_status_history, tenant_audit_logs, platform_audit_logs.
-// Сессии и Google-вход добавляются миграцией Phase 3, приём заявок — Phase 8.
+// Phase 3 — user_identities, user_sessions, login_handoffs, tenant_sessions, platform_sessions, auth_throttle.
+// Приём заявок (form_endpoints, form_submissions) — Phase 8.
 //
 // Всё, что Prisma не выражает (CHECK, RLS, политики, GRANT), — в SQL миграций.
 
@@ -29,6 +30,10 @@ enum TenantStatus {
 enum MembershipRole {
   TENANT_ADMIN
   MANAGER
+}
+
+enum IdentityProvider {
+  GOOGLE
 }
 
 enum LeadStatus {
@@ -61,6 +66,8 @@ model Tenant {
   leadStatusHistory LeadStatusHistory[]
   auditLogs         TenantAuditLog[]
   platformAuditLogs PlatformAuditLog[]
+  sessions          TenantSession[]
+  loginHandoffs     LoginHandoff[]
 
   @@map("tenants")
 }
@@ -76,9 +83,71 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  memberships Membership[]
+  memberships   Membership[]
+  identities    UserIdentity[]
+  sessions      UserSession[]
+  loginHandoffs LoginHandoff[]
 
   @@map("users")
+}
+
+/// Внешний способ входа (Google). Связывает постоянный Google "sub" с аккаунтом (A12).
+model UserIdentity {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  userId          String           @map("user_id") @db.Uuid
+  provider        IdentityProvider
+  providerSubject String           @map("provider_subject") @db.VarChar(255)
+  emailAtLink     String           @map("email_at_link") @db.VarChar(320)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt      DateTime?        @map("last_used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerSubject])
+  @@unique([userId, provider])
+  @@map("user_identities")
+}
+
+/// Сессия центрального входа (app.<домен>). Одна запись — один refresh-токен; ротация создаёт новую запись той же цепочки (familyId).
+model UserSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(128)
+  familyId          String    @map("family_id") @db.Uuid
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(3)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt        DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenantSessions TenantSession[]
+  loginHandoffs  LoginHandoff[]
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("user_sessions")
+}
+
+/// Одноразовый код перехода с app.<домен> на поддомен компании (60 с), привязанный к браузеру через state (A6).
+model LoginHandoff {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  userSessionId String    @map("user_session_id") @db.Uuid
+  codeHash      String    @unique @map("code_hash") @db.VarChar(128)
+  stateHash     String    @map("state_hash") @db.VarChar(128)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt        DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userSession UserSession @relation(fields: [userSessionId], references: [id], onDelete: Restrict)
+
+  @@index([expiresAt])
+  @@map("login_handoffs")
 }
 
 model PlatformAdmin {
@@ -91,8 +160,37 @@ model PlatformAdmin {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   auditLogs PlatformAuditLog[]
+  sessions  PlatformSession[]
 
   @@map("platform_admins")
+}
+
+model PlatformSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  adminId           String    @map("admin_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(128)
+  familyId          String    @map("family_id") @db.Uuid
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(3)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt        DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId])
+  @@index([familyId])
+  @@map("platform_sessions")
+}
+
+/// Счётчики ограничения входа (A9). Ключ — HMAC от IP или email, исходные значения не хранятся.
+model AuthThrottle {
+  keyHash     String   @id @map("key_hash") @db.VarChar(128)
+  windowStart DateTime @map("window_start") @db.Timestamptz(3)
+  count       Int
+
+  @@map("auth_throttle")
 }
 
 model PlatformAuditLog {
@@ -140,6 +238,7 @@ model Membership {
   assignedLeads Lead[]              @relation("LeadAssignee")
   statusChanges LeadStatusHistory[]
   auditLogs     TenantAuditLog[]
+  sessions      TenantSession[]
 
   @@unique([tenantId, userId])
   @@index([userId])
@@ -157,6 +256,31 @@ model TenantModule {
 
   @@id([tenantId, moduleId])
   @@map("tenant_modules")
+}
+
+/// Сессия внутри компании (поддомен). Действует только для своей компании; составной FK требует участия в ней.
+model TenantSession {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  userSessionId     String    @map("user_session_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash") @db.VarChar(128)
+  familyId          String    @map("family_id") @db.Uuid
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  absoluteExpiresAt DateTime  @map("absolute_expires_at") @db.Timestamptz(3)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt        DateTime? @map("last_used_at") @db.Timestamptz(3)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  membership  Membership  @relation(fields: [tenantId, userId], references: [tenantId, userId], onDelete: Restrict)
+  userSession UserSession @relation(fields: [userSessionId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, userId])
+  @@index([familyId])
+  @@index([userSessionId])
+  @@map("tenant_sessions")
 }
 
 model Lead {

@@ -1,6 +1,6 @@
 # Modulyn
 
-Модульная multi-tenant CRM. Выполнены Phase 1 (технический каркас) и Phase 2 (фундамент изоляции компаний: модель данных, миграции, определение компании по поддомену, tenant context, PostgreSQL RLS). Вход, роли и бизнес-модули — следующие фазы. Источник плана, разрешений и статусов: [SPEC.md](SPEC.md); модель данных Phase 2: [specs/phase2_design.md](specs/phase2_design.md).
+Модульная multi-tenant CRM. Выполнены Phase 1 (технический каркас), Phase 2 (изоляция компаний: модель данных, миграции, определение компании по поддомену, tenant context, PostgreSQL RLS) и Phase 3 (вход по паролю и через Google, выбор и переключение компании, сессии, роли, CSRF, ограничение входа). Бизнес-модули — следующие фазы. Источник плана, разрешений и статусов: [SPEC.md](SPEC.md); модель данных: [specs/phase2_design.md](specs/phase2_design.md); вход и сессии: [specs/phase3_design.md](specs/phase3_design.md).
 
 ## Требования
 
@@ -28,7 +28,9 @@ pnpm smoke
 
 Открыть:
 
-- http://nova.localhost:8080 — стартовая страница.
+- http://nova.localhost:8080 — CRM компании Nova: без сессии перенаправляет на вход `app.localhost` с заголовком «Вход в Nova CRM».
+- http://app.localhost:8080 — центральный вход и выбор компании.
+- http://admin.localhost:8080 — вход администратора платформы.
 - http://nova.localhost:8080/api/tenant — компания текущего поддомена: `{"slug":"nova","displayName":"Nova CRM"}`.
 - http://company-b.localhost:8080/api/tenant — другая компания на том же приложении.
 - http://suspended-co.localhost:8080/api/tenant и http://unknown.localhost:8080/api/tenant — одинаковый 404.
@@ -43,6 +45,35 @@ pnpm stack:down
 ```
 
 `stack:down` сохраняет named volume PostgreSQL. Не используйте `docker compose down -v`, если данные нужно сохранить. Изменение `POSTGRES_PASSWORD` в `.env` не меняет пароль уже созданной БД; пароли ролей `modulyn_owner` и `modulyn_app` обновляются автоматически при каждом запуске `migrate` или `pnpm db:roles`.
+
+## Вход и сессии (Phase 3)
+
+Синтетические учётные записи из `pnpm db:seed` (только локально; пароль у всех — `SEED_PASSWORD` в [apps/api/scripts/seed.mjs](apps/api/scripts/seed.mjs)):
+
+| Email | Где | Роль |
+| --- | --- | --- |
+| `manager@shared.example` | Nova и Company B | менеджер в обеих — для проверки переключения |
+| `admin@nova.example` | Nova | администратор компании |
+| `admin@company-b.example` | Company B | администратор компании |
+| `admin@suspended.example` | только отключённая компания | список компаний пуст |
+| `platform@modulyn.example` | `admin.localhost` | администратор платформы |
+
+Как устроено:
+
+- Пароль вводится только на `app.<домен>` (и `admin.<домен>` для платформы). После входа — список компаний; переход в компанию — одноразовым кодом (60 с), привязанным к браузеру, без кода в URL.
+- Cookies `HttpOnly`, без `Domain`: сессия Nova не отправляется на Company B. С https — префикс `__Host-` и `Secure`.
+- Access JWT (10 мин, платформа — 5) подписан отдельным ключом для каждого контекста; сессия проверяется в БД на каждом запросе, поэтому выход, блокировка, отключение участия и смена пароля действуют сразу. Refresh-токен меняется при каждом обновлении; повтор старого токена отзывает всю цепочку.
+- Изменяющие запросы принимаются только с `Origin` своего хоста и `Content-Type: application/json`. Вход ограничен: 20 попыток с IP и 10 неудачных на аккаунт за 15 минут (HTTP 429).
+
+### Вход через Google
+
+Без настройки кнопка Google скрыта. Чтобы включить:
+
+1. Google Cloud Console → APIs & Services → Credentials → Create credentials → OAuth client ID → тип **Web application**.
+2. Authorized redirect URI: `http://app.localhost:8080/api/auth/google/callback` (для `pnpm dev` — порт 3000). Если Google не примет адрес `app.localhost`, сообщите — предусмотрен запасной вариант (specs/phase3_design.md, раздел «Риски»).
+3. Записать Client ID и Client secret в `.env` как `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET`, затем `pnpm stack:up`.
+
+Войти через Google может только существующий пользователь: Google-аккаунт привязывается при первом входе, если email подтверждён Google и совпадает с email аккаунта. Регистрации нет.
 
 ## Разработка с перезагрузкой
 
@@ -79,7 +110,7 @@ pnpm test:integration
 pnpm smoke
 ```
 
-`pnpm check` выполняет typecheck, lint, unit-тесты и build без базы данных. `pnpm test:integration` требует запущенный PostgreSQL (`pnpm infra:up`): пересоздаёт отдельную базу `<POSTGRES_DB>_test`, создаёт роли, применяет миграции и seed, затем проверяет изоляцию компаний под ролью `modulyn_app` (чтение, изменение, удаление, IDOR, RLS без контекста, пул соединений, конкурентные запросы, менеджер в двух компаниях). Рабочая база не затрагивается. Smoke требует запущенный стек и `pnpm db:seed`.
+`pnpm check` выполняет typecheck, lint, unit-тесты и build без базы данных. `pnpm test:integration` требует запущенный PostgreSQL (`pnpm infra:up`): пересоздаёт отдельную базу `<POSTGRES_DB>_test`, создаёт роли, применяет миграции и seed, затем проверяет изоляцию компаний под ролью `modulyn_app` (чтение, изменение, удаление, IDOR, RLS без контекста, пул соединений, конкурентные запросы, менеджер в двух компаниях) и вход (пароль, переход в компанию, ротация и отзыв сессий, границы tenant/app/platform, CSRF, ограничение входа, Google через локальный поддельный OIDC-провайдер). Рабочая база не затрагивается. Smoke требует запущенный стек и `pnpm db:seed`.
 
 - `/api/health` → 200, `{ "status": "ok", "service": "modulyn-api" }` на любом hostname.
 - `/api/health/ready` → 200, `{ "status": "ready", "database": "up" }`; 503 при недоступной БД или небезопасной роли.
@@ -95,11 +126,12 @@ pnpm smoke
 6. `apps/api/src/tenancy/hostname.ts` — разбор Host в компанию; `tenancy.middleware.ts` — поиск компании и контекст запроса; `request-context.ts` — AsyncLocalStorage.
 7. `apps/api/src/database/database.service.ts` — PrismaClient и проверка runtime-роли; `tenant-db.service.ts` — транзакция компании с `set_config('app.tenant_id', …, true)`; `tenant-directory.service.ts` — поиск активной компании.
 8. `apps/api/test/integration/isolation.test.mjs` — доказательства изоляции.
+9. Вход (Phase 3): `apps/api/src/auth/auth.guard.ts` — глобальная проверка каждого запроса; `sessions.service.ts` — выдача, проверка и ротация сессий; `auth.controller.ts` — маршруты входа и перехода в компанию; `origin.middleware.ts` — CSRF; `src/database/auth-store.service.ts` — единственный доступ к аккаунтам и сессиям; `apps/web/src/features/auth` — страницы входа, выбора компании и каркас CRM. Тесты: `apps/api/test/integration/auth.test.mjs`.
 9. `docker-compose.yml` и `infra/proxy/default.conf` — сервисы, порядок запуска, маршрутизация.
 
 ## Ограничения
 
-Это локальная основа, не готовый production SaaS. Нет login, сессий, RBAC, административных и бизнес-API — Phase 3 и далее. Production TLS/DNS не настроены. Runtime-образ API содержит build dependencies и Prisma CLI (нужен сервису migrate).
+Это локальная основа, не готовый production SaaS. Нет административных и бизнес-API, приглашений и сброса пароля по email — Phase 4 и далее. Вход через настоящий Google проверяется после создания OAuth-клиента (автотесты используют поддельного провайдера). Production TLS/DNS не настроены. Runtime-образ API содержит build dependencies и Prisma CLI (нужен сервису migrate).
 
 ## Работа AI-агентов
 

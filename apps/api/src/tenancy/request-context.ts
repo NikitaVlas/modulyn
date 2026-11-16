@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 /**
- * Контекст текущего HTTP-запроса (подшаг 2.4).
+ * Контекст текущего HTTP-запроса (подшаги 2.4, 3.5).
  * AsyncLocalStorage хранит значение для всей асинхронной цепочки одного запроса, поэтому параллельные
  * запросы разных компаний не видят контекст друг друга, и его не нужно передавать параметром.
  */
@@ -11,10 +11,25 @@ export interface TenantRef {
   displayName: string;
 }
 
+export type TenantRole = 'TENANT_ADMIN' | 'MANAGER';
+
+/** Кто выполняет запрос. Заполняется guard аутентификации после проверки токена и сессии в БД. */
+export interface TenantPrincipal { userId: string; sessionId: string; role: TenantRole }
+export interface AppPrincipal { userId: string; sessionId: string }
+export interface PlatformPrincipal { adminId: string; sessionId: string }
+
+/**
+ * host — исходный Host запроса (с портом), как его видел браузер; нужен для проверки Origin (A7).
+ * ip — адрес клиента для ограничения входа (A9).
+ */
+interface Common { host?: string; ip?: string | undefined }
+
 export type RequestContext =
-  | { kind: 'tenant'; tenant: TenantRef }
-  | { kind: 'platform' }
-  | { kind: 'app' };
+  | (Common & { kind: 'tenant'; tenant: TenantRef; principal?: TenantPrincipal })
+  | (Common & { kind: 'platform'; principal?: PlatformPrincipal })
+  | (Common & { kind: 'app'; principal?: AppPrincipal });
+
+export type ContextKind = RequestContext['kind'];
 
 /** Ошибка программиста: tenant-операция вызвана вне контекста компании. Отказ до любого SQL. */
 export class MissingTenantContextError extends Error {

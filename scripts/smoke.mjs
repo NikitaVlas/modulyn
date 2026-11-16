@@ -5,9 +5,9 @@ if (origin.protocol !== 'http:' || !(origin.hostname === 'localhost' || origin.h
   throw new Error('Smoke checks target local HTTP environments only');
 }
 // Preserve Host while connecting directly to loopback: Windows DNS need not resolve *.localhost.
-function request(path, host = origin.host) {
+function request(path, host = origin.host, { method = 'GET', headers = {}, body } = {}) {
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ hostname: '127.0.0.1', port: origin.port || 80, path, headers: { Host: host }, timeout: 10000 }, res => {
+    const req = httpRequest({ hostname: '127.0.0.1', port: origin.port || 80, path, method, headers: { Host: host, ...headers }, timeout: 10000 }, res => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', chunk => { body += chunk; });
@@ -16,9 +16,11 @@ function request(path, host = origin.host) {
     });
     req.on('timeout', () => req.destroy(new Error('HTTP smoke request timed out')));
     req.on('error', reject);
+    if (body) req.write(body);
     req.end();
   });
 }
+const cookiesOf = res => (res.headers['set-cookie'] ?? []).map(c => c.split(';')[0]).filter(c => !c.endsWith('=')).join('; ');
 const page = await request('/');
 assert.equal(page.status, 200);
 assert.match(page.body, /MODULYN/);
@@ -46,4 +48,40 @@ const suspended = await request('/api/tenant', 'suspended-co.localhost' + port);
 assert.equal(unknown.status, 404);
 assert.deepEqual([suspended.status, suspended.body], [unknown.status, unknown.body]);
 assert.equal((await request('/api/tenant', 'admin.localhost' + port)).status, 404);
-console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin)');
+
+// Phase 3: вход на app.localhost, переход в Nova через одноразовый код, сессия не действует в Company B.
+// Пароль синтетических пользователей — SEED_PASSWORD из apps/api/scripts/seed.mjs (только локально).
+const appHost = 'app.localhost' + port;
+const appOrigin = 'http://' + appHost;
+const login = await request('/api/auth/login', appHost, {
+  method: 'POST', headers: { Origin: appOrigin, 'content-type': 'application/json' },
+  body: JSON.stringify({ email: 'manager@shared.example', password: 'modulyn-local-dev-password' }),
+});
+assert.equal(login.status, 200, 'login on app.localhost');
+const appCookies = cookiesOf(login);
+const start = await request('/api/auth/handoff/start', 'nova.localhost' + port);
+assert.equal(start.status, 303);
+const issueUrl = new URL(start.headers.location);
+const issue = await request(issueUrl.pathname + issueUrl.search, appHost, { headers: { Cookie: appCookies } });
+assert.equal(issue.status, 200, 'handoff code issued');
+const field = name => new RegExp(`name="${name}" value="([^"]+)"`).exec(issue.body)[1];
+// Шаг 3: межсайтовая форма с app.localhost (браузер не прикладывает cookies Lax) — пересылка на свой хост.
+const relay = await request('/api/auth/handoff/complete', 'nova.localhost' + port, {
+  method: 'POST', headers: { Origin: appOrigin, 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({ code: field('code'), state: field('state') }).toString(),
+});
+assert.equal(relay.status, 200, 'handoff relay page');
+// Шаг 4: та же форма со своего origin вместе с cookie state.
+const complete = await request('/api/auth/handoff/finish', 'nova.localhost' + port, {
+  method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/x-www-form-urlencoded', Cookie: cookiesOf(start) },
+  body: new URLSearchParams({ code: field('code'), state: field('state') }).toString(),
+});
+assert.equal(complete.headers.location, '/', 'handoff accepted');
+const novaCookies = cookiesOf(complete);
+const me = await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } });
+assert.equal(me.status, 200);
+assert.equal(JSON.parse(me.body).tenant.slug, 'nova');
+assert.equal((await request('/api/auth/me', 'company-b.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'Nova session on Company B');
+await request('/api/auth/logout', 'nova.localhost' + port, { method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/json', Cookie: novaCookies }, body: '{}' });
+assert.equal((await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'logout revokes');
+console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, logout');

@@ -1,9 +1,15 @@
 // Синтетические данные для разработки и интеграционных тестов (подшаг 2.6). Реальные данные не используются.
 // Компании: nova, company-b (активные), suspended-co (отключена). Модуль leads.
 // Пользователи: администратор каждой компании и один менеджер, который состоит в ОБЕИХ компаниях.
+// Phase 3: у синтетических пользователей и администратора платформы один локальный пароль SEED_PASSWORD;
+// admin@suspended.example состоит только в отключённой компании (список компаний у него пуст).
 // Запуск: pnpm db:seed (под владельцем схемы, MIGRATION_DATABASE_URL). Повторный запуск ничего не дублирует.
+import { Algorithm, hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../dist/generated/prisma/client.js';
+
+/** Только для локальной разработки и тестов; seed отказывается работать в production. */
+export const SEED_PASSWORD = 'modulyn-local-dev-password';
 
 export const SEED = {
   tenants: [
@@ -15,12 +21,17 @@ export const SEED = {
     { email: 'admin@nova.example', name: 'Nova Admin' },
     { email: 'admin@company-b.example', name: 'Company B Admin' },
     { email: 'manager@shared.example', name: 'Shared Manager' },
+    { email: 'admin@suspended.example', name: 'Suspended Co Admin' },
+  ],
+  platformAdmins: [
+    { email: 'platform@modulyn.example', name: 'Platform Admin' },
   ],
   memberships: [
     { tenant: 'nova', email: 'admin@nova.example', role: 'TENANT_ADMIN' },
     { tenant: 'nova', email: 'manager@shared.example', role: 'MANAGER' },
     { tenant: 'company-b', email: 'admin@company-b.example', role: 'TENANT_ADMIN' },
     { tenant: 'company-b', email: 'manager@shared.example', role: 'MANAGER' },
+    { tenant: 'suspended-co', email: 'admin@suspended.example', role: 'TENANT_ADMIN' },
   ],
   leads: [
     { tenant: 'nova', name: 'Nova Lead 1', email: 'lead1@nova-visitor.example', source: 'WEB_FORM', sourceDetail: 'trial', assignee: 'manager@shared.example' },
@@ -48,17 +59,26 @@ export async function seed(prisma) {
     where: { key: 'leads' }, update: {},
     create: { key: 'leads', name: 'Leads', description: 'Заявки и их обработка' },
   });
+  const passwordHash = await hash(SEED_PASSWORD, { algorithm: Algorithm.Argon2id, memoryCost: 19_456, timeCost: 2, parallelism: 1 });
   const users = {};
   for (const u of SEED.users) {
-    users[u.email] = await prisma.user.upsert({ where: { email: u.email }, update: {}, create: u });
+    users[u.email] = await prisma.user.upsert({ where: { email: u.email }, update: {}, create: { ...u, passwordHash } });
+    // Данные Phase 2 без пароля получают локальный пароль; существующий пароль не меняется.
+    if (!users[u.email].passwordHash) users[u.email] = await prisma.user.update({ where: { id: users[u.email].id }, data: { passwordHash } });
   }
-  for (const slug of ['nova', 'company-b']) {
+  const platformAdmins = {};
+  for (const a of SEED.platformAdmins) {
+    platformAdmins[a.email] = await prisma.platformAdmin.upsert({ where: { email: a.email }, update: {}, create: { ...a, passwordHash } });
+  }
+  for (const slug of ['nova', 'company-b', 'suspended-co']) {
     const tenantId = tenants[slug].id;
     await inTenant(prisma, tenantId, async tx => {
-      await tx.tenantModule.upsert({
-        where: { tenantId_moduleId: { tenantId, moduleId: leadsModule.id } },
-        update: {}, create: { tenantId, moduleId: leadsModule.id, enabled: true },
-      });
+      if (slug !== 'suspended-co') {
+        await tx.tenantModule.upsert({
+          where: { tenantId_moduleId: { tenantId, moduleId: leadsModule.id } },
+          update: {}, create: { tenantId, moduleId: leadsModule.id, enabled: true },
+        });
+      }
       for (const m of SEED.memberships.filter(x => x.tenant === slug)) {
         const userId = users[m.email].id;
         await tx.membership.upsert({
@@ -78,7 +98,7 @@ export async function seed(prisma) {
       }
     });
   }
-  return { tenants, users, leadsModule };
+  return { tenants, users, platformAdmins, leadsModule };
 }
 
 if (import.meta.main) {

@@ -16,7 +16,8 @@ const children = [
   pnpm(['--filter', '@modulyn/contracts', 'exec', 'tsc', '--watch', '--preserveWatchOutput']),
   pnpm(['--filter', '@modulyn/api', 'exec', 'tsc', '--watch', '--preserveWatchOutput']),
   // Next.js dev проксирует /api и передаёт исходный Host в X-Forwarded-Host (только для разработки).
-  spawn(process.execPath, ['--watch', 'apps/api/dist/main.js'], { stdio: 'inherit', env: { ...process.env, TRUST_DEV_PROXY_HOST: 'true' } }),
+  // Публичные адреса в режиме dev — Next.js на :3000 (перенаправления между app.localhost и поддоменами).
+  spawn(process.execPath, ['--watch', 'apps/api/dist/main.js'], { stdio: 'inherit', env: { ...process.env, TRUST_DEV_PROXY_HOST: 'true', PUBLIC_PORT: '3000' } }),
   pnpm(['--filter', '@modulyn/web', 'dev']),
 ];
 let stopping = false;

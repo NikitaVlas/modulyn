@@ -41,6 +41,15 @@ services:
       APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
       # Runtime-роль без обхода RLS; суперпользователь и владелец схемы API не передаются.
       DATABASE_URL: postgresql://modulyn_app:${DB_APP_PASSWORD:?Run pnpm env:init}@db:5432/${POSTGRES_DB}
+      JWT_SECRET_TENANT: ${JWT_SECRET_TENANT:?Run pnpm env:init}
+      JWT_SECRET_APP: ${JWT_SECRET_APP:?Run pnpm env:init}
+      JWT_SECRET_PLATFORM: ${JWT_SECRET_PLATFORM:?Run pnpm env:init}
+      PUBLIC_SCHEME: ${PUBLIC_SCHEME:-http}
+      PUBLIC_PORT: ${HTTP_PORT:-8080}
+      # API доступен только через proxy, который записывает X-Forwarded-For одним адресом клиента.
+      TRUST_PROXY: "true"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -56,6 +65,8 @@ services:
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: 1
+      # Next.js определяет по hostname, какой раздел показать: app / admin / компания.
+      APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

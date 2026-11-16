@@ -1,4 +1,4 @@
-// Создаёт или дополняет локальный .env. Пароли случайные и не печатаются.
+// Создаёт или дополняет локальный .env. Пароли и ключи JWT случайные и не печатаются.
 // Существующие значения не меняются, кроме одного случая обновления до Phase 2:
 // DATABASE_URL, указывающий на суперпользователя (POSTGRES_USER), переводится на runtime-роль modulyn_app,
 // потому что суперпользователь обходит RLS и API с ним откажется работать. Старое значение не теряется:
@@ -31,6 +31,16 @@ const defaults = [
   ['API_PORT', () => '3001'],
   ['NODE_ENV', () => 'development'],
   ['HTTP_PORT', () => '8080'],
+  // Phase 3: отдельный ключ подписи JWT для каждого контекста (A3).
+  ['JWT_SECRET_TENANT', () => randomBytes(32).toString('hex')],
+  ['JWT_SECRET_APP', () => randomBytes(32).toString('hex')],
+  ['JWT_SECRET_PLATFORM', () => randomBytes(32).toString('hex')],
+  // Публичные адреса для перенаправлений между app.<домен> и поддоменами компаний.
+  ['PUBLIC_SCHEME', () => 'http'],
+  ['PUBLIC_PORT', v => v.get('HTTP_PORT')],
+  // Вход через Google: значения из Google Cloud Console (README). Пусто — кнопка Google скрыта.
+  ['GOOGLE_CLIENT_ID', () => ''],
+  ['GOOGLE_CLIENT_SECRET', () => ''],
 ];
 
 const added = [];

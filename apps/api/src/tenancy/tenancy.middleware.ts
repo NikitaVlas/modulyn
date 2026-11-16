@@ -28,17 +28,19 @@ export class TenancyMiddleware {
 
   readonly handle = (req: Request, res: Response, next: NextFunction): void => {
     if (isHealthPath(req.path)) { next(); return; }
-    const resolution = resolveHost(this.originalHost(req), this.config.appBaseDomain);
+    const host = this.originalHost(req);
+    const resolution = resolveHost(host, this.config.appBaseDomain);
+    const meta = { host: (host ?? '').toLowerCase(), ip: this.clientIp(req) };
 
     if (resolution.kind === 'invalid') { notFound(res); return; }
     if (resolution.kind === 'platform' || resolution.kind === 'app') {
-      this.enter({ kind: resolution.kind }, next);
+      this.enter({ kind: resolution.kind, ...meta }, next);
       return;
     }
 
     this.directory.findActiveBySlug(resolution.slug).then(tenant => {
       if (!tenant) { notFound(res); return; }
-      this.enter({ kind: 'tenant', tenant }, next);
+      this.enter({ kind: 'tenant', tenant, ...meta }, next);
     }, () => {
       this.logger.error('Tenant lookup failed');
       if (!res.headersSent) res.status(503).json({ message: 'Service unavailable', statusCode: 503 });
@@ -53,6 +55,17 @@ export class TenancyMiddleware {
     const forwarded = req.headers['x-forwarded-host'];
     if (this.config.trustDevProxyHost && isLoopback(req.socket.remoteAddress) && typeof forwarded === 'string') return forwarded;
     return req.headers.host;
+  }
+
+  /**
+   * IP клиента для ограничения входа. X-Forwarded-For учитывается только когда API закрыт за nginx (TRUST_PROXY),
+   * который перезаписывает заголовок одним адресом, или от локального Next.js dev-сервера.
+   */
+  private clientIp(req: Request): string | undefined {
+    const forwarded = req.headers['x-forwarded-for'];
+    const trusted = this.config.trustProxy || (this.config.trustDevProxyHost && isLoopback(req.socket.remoteAddress));
+    if (trusted && typeof forwarded === 'string' && forwarded.length > 0) return forwarded.split(',')[0]?.trim();
+    return req.socket.remoteAddress;
   }
 
   private enter(context: RequestContext, next: NextFunction): void {
