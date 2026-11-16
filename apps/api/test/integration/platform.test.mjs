@@ -6,23 +6,26 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { prepareTestDatabase } from './setup.mjs';
 import { SEED_PASSWORD } from '../../scripts/seed.mjs';
-import { Browser } from './browser.mjs';
+import { Browser, mailToken } from './browser.mjs';
 
 const apiRoot = fileURLToPath(new URL('../../', import.meta.url));
-let env; let app; let port; let tenants; let totp;
+let env; let app; let port; let tenants; let totp; let outbox;
 
 before(async () => {
   env = await prepareTestDatabase();
   ({ tenants } = env.seeded);
   Object.assign(process.env, {
     DATABASE_URL: env.appUrl, APP_BASE_DOMAIN: 'localhost', NODE_ENV: 'test', PUBLIC_PORT: '8080', PUBLIC_SCHEME: 'http', TRUST_PROXY: 'true',
+    SMTP_URL: 'memory:',
   });
   totp = await import('../../dist/auth/totp.js');
   const { createApplication } = await import('../../dist/bootstrap.js');
+  const { MailService } = await import('../../dist/mail/mail.service.js');
   app = await createApplication();
   app.useLogger(false);
   await app.listen(0, '127.0.0.1');
   port = app.getHttpServer().address().port;
+  outbox = app.get(MailService).outbox;
 });
 
 after(async () => {
@@ -202,34 +205,47 @@ describe('4.2–4.3 companies: create with first admin, settings, suspend and ac
     });
     assert.equal(r.status, 201);
     assert.equal(r.json.tenant.slug, 'acme');
-    assert.equal(r.json.tenant.activeMembers, 1);
-    assert.deepEqual(r.json.firstAdmin, { email: 'boss@acme.example', name: 'Acme Boss', existingAccount: false });
-    assert.match(r.json.temporaryPassword, /^[a-km-np-z2-9A]{20}$/);
+    assert.equal(r.json.tenant.activeMembers, 0, 'the first admin becomes a member when accepting');
+    // C3 (Phase 5): приглашение по email вместо временного пароля; платформа не узнаёт, был ли аккаунт.
+    assert.deepEqual(r.json.firstAdmin, { email: 'boss@acme.example', name: 'Acme Boss' });
+    assert.equal(r.json.invitationSent, true);
+    assert.equal(r.json.temporaryPassword, undefined);
     assert.equal((await browser().get('acme', '/api/tenant')).json.displayName, 'Acme CRM', 'the subdomain works at once');
 
+    const token = mailToken(outbox, 'boss@acme.example');
+    assert.ok(token, 'invitation e-mail with a link');
     const boss = browser();
-    assert.equal((await boss.post('app', '/api/auth/login', { email: 'boss@acme.example', password: r.json.temporaryPassword })).status, 200);
-    const me = await boss.get('app', '/api/auth/me');
-    assert.deepEqual([me.json.passwordChangeRequired, me.json.companies], [true, []]);
-    const early = await boss.enter('acme');
-    assert.equal(early.headers.location, 'http://app.localhost:8080/', 'no company before the password change');
-    assert.equal((await boss.post('app', '/api/auth/password', { currentPassword: r.json.temporaryPassword, newPassword: 'acme boss passphrase' })).status, 204);
+    const info = await boss.post('app', '/api/invitations/inspect', { token });
+    assert.deepEqual([info.json.companyName, info.json.role, info.json.accountExists, info.json.status], ['Acme CRM', 'TENANT_ADMIN', false, 'open']);
+    const accepted = await boss.post('app', '/api/invitations/accept', { token, name: 'Acme Boss', password: 'acme boss passphrase' });
+    assert.deepEqual([accepted.status, accepted.json.tenantSlug], [200, 'acme']);
     assert.equal((await boss.enter('acme')).headers.location, '/');
     const inside = await boss.get('acme', '/api/auth/me');
-    assert.deepEqual([inside.json.role, inside.json.tenant.slug, inside.json.passwordChangeRequired], ['TENANT_ADMIN', 'acme', false]);
+    assert.deepEqual([inside.json.role, inside.json.tenant.slug], ['TENANT_ADMIN', 'acme']);
+    const { rows } = await owner("SELECT email_verified_at IS NOT NULL AS verified FROM users WHERE email = 'boss@acme.example'");
+    assert.equal(rows[0].verified, true);
   });
 
-  test('an existing account becomes first admin without a new password', async () => {
+  test('an existing account accepts the first-admin invitation after signing in', async () => {
     const r = await admin.b.post('admin', '/api/platform/tenants', {
-      slug: 'beta', name: 'Beta', displayName: 'Beta CRM', adminEmail: 'manager@shared.example', adminName: 'ignored',
+      slug: 'beta', name: 'Beta', displayName: 'Beta CRM', adminEmail: 'manager@shared.example', adminName: 'Manager',
     });
     assert.equal(r.status, 201);
-    assert.deepEqual(r.json.firstAdmin, { email: 'manager@shared.example', name: 'Shared Manager', existingAccount: true });
-    assert.equal(r.json.temporaryPassword, undefined);
+    assert.deepEqual(r.json.firstAdmin, { email: 'manager@shared.example', name: 'Manager' }, 'no hint whether the account exists');
+    const token = mailToken(outbox, 'manager@shared.example');
     const m = browser();
+    assert.equal((await m.post('app', '/api/invitations/accept', { token, name: 'x', password: 'some long password' })).status, 409, 'existing account must sign in');
     await m.post('app', '/api/auth/login', { email: 'manager@shared.example', password: SEED_PASSWORD });
+    assert.equal((await m.post('app', '/api/invitations/inspect', { token })).json.signedInAs, 'manager@shared.example');
+    assert.equal((await m.post('app', '/api/invitations/accept', { token })).json.tenantSlug, 'beta');
     const companies = (await m.get('app', '/api/auth/me')).json.companies;
     assert.deepEqual(companies.find(c => c.slug === 'beta'), { slug: 'beta', displayName: 'Beta CRM', role: 'TENANT_ADMIN' });
+    assert.equal((await m.post('app', '/api/invitations/accept', { token })).status, 400, 'the link works once');
+
+    // C4: платформа может пригласить ещё одного администратора (например, если администраторов не осталось).
+    const again = await admin.b.post('admin', `/api/platform/tenants/${r.json.tenant.id}/admin-invitations`, { email: 'second@beta.example', name: 'Second' });
+    assert.deepEqual([again.status, again.json.invitationSent], [201, true]);
+    assert.ok(mailToken(outbox, 'second@beta.example'));
   });
 
   test('names change; the subdomain cannot change, not even by direct SQL of the runtime role', async () => {

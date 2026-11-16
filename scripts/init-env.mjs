@@ -40,6 +40,8 @@ const defaults = [
   // Публичные адреса для перенаправлений между app.<домен> и поддоменами компаний.
   ['PUBLIC_SCHEME', () => 'http'],
   ['PUBLIC_PORT', v => v.get('HTTP_PORT')],
+  // Phase 5: почта для pnpm dev — Mailpit из Compose (pnpm infra:up). Compose-стек использует свой адрес mailpit:1025.
+  ['SMTP_URL', () => 'smtp://127.0.0.1:1025'],
   // Вход через Google: значения из Google Cloud Console (README). Пусто — кнопка Google скрыта.
   ['GOOGLE_CLIENT_ID', () => ''],
   ['GOOGLE_CLIENT_SECRET', () => ''],

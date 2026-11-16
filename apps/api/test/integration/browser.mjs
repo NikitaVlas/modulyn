@@ -66,3 +66,10 @@ export class Browser {
     });
   }
 }
+
+/** Ссылка из последнего письма на адрес (почта в тестах — SMTP_URL=memory:). path: 'invite' или 'reset-password'. */
+export function mailToken(outbox, email, path = 'invite') {
+  const mail = [...outbox].reverse().find(m => m.to === email);
+  if (!mail) return null;
+  return new RegExp(`/${path}#([A-Za-z0-9_-]+)`).exec(mail.text)?.[1] ?? null;
+}

@@ -27,6 +27,12 @@ export interface Environment {
   google: GoogleConfig | undefined;
   /** B2: 32-байтный ключ AES-256-GCM для секретов TOTP администраторов платформы (64 hex-символа). */
   totpKey: Buffer;
+  /**
+   * C1: почта. smtp:// или smtps:// — любой почтовый сервис; memory: — письма остаются в памяти процесса
+   * (только тесты, не production); undefined — отправка выключена, приглашения создаются, но письма не уходят.
+   */
+  smtpUrl: string | undefined;
+  mailFrom: string;
 }
 
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
@@ -88,9 +94,19 @@ export function parseEnvironment(env: NodeJS.ProcessEnv): Environment {
   }
   const totpKey = Buffer.from(env.PLATFORM_TOTP_KEY, 'hex');
 
+  const smtpUrl = env.SMTP_URL || undefined;
+  if (smtpUrl) {
+    let protocol: string;
+    try { protocol = new URL(smtpUrl).protocol; } catch { throw new Error('SMTP_URL must be smtp://, smtps:// or memory:'); }
+    if (!['smtp:', 'smtps:', 'memory:'].includes(protocol)) throw new Error('SMTP_URL must be smtp://, smtps:// or memory:');
+    if (protocol === 'memory:' && nodeEnv === 'production') throw new Error('SMTP_URL=memory: is not allowed in production');
+  }
+  const mailFrom = env.MAIL_FROM || `Modulyn <no-reply@${appBaseDomain === 'localhost' ? 'modulyn.localhost' : appBaseDomain}>`;
+  if (/[\r\n]/.test(mailFrom) || mailFrom.length > 200) throw new Error('MAIL_FROM is invalid');
+
   return {
     port, databaseUrl: env.DATABASE_URL, nodeEnv: nodeEnv as Environment['nodeEnv'], appBaseDomain, trustDevProxyHost,
-    trustProxy, publicScheme, publicPort, jwtSecrets, google, totpKey,
+    trustProxy, publicScheme, publicPort, jwtSecrets, google, totpKey, smtpUrl, mailFrom,
   };
 }
 

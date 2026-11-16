@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { AuthProvidersResponse, LoginResponse, TenantInfoResponse } from '@modulyn/contracts';
 import { Brand, Button, Card, Centered, Field, Notice } from '../../components/ui';
@@ -12,6 +13,8 @@ interface Props {
   /** Компания, из которой пришёл пользователь (?tenant=nova): после входа переход сразу в неё. */
   tenant?: string | undefined;
   error?: string | undefined;
+  /** ?next=invite — после входа вернуться к принятию приглашения (5.2). */
+  returnTo?: 'invite' | undefined;
 }
 
 const ERRORS: Record<string, string> = {
@@ -19,7 +22,7 @@ const ERRORS: Record<string, string> = {
 };
 
 /** Страница входа app.<домен> (пользователи) и admin.<домен> (платформа). Пароль вводится только здесь (A5). */
-export function LoginForm({ context, baseDomain, tenant, error }: Props) {
+export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -37,7 +40,7 @@ export function LoginForm({ context, baseDomain, tenant, error }: Props) {
       .then(t => setCompanyName(t.displayName), () => undefined);
   }, [context, tenant]);
 
-  const next = () => (tenant ? originOf(tenant, baseDomain) + '/api/auth/handoff/start' : '/');
+  const next = () => (returnTo === 'invite' ? '/invite' : tenant ? originOf(tenant, baseDomain) + '/api/auth/handoff/start' : '/');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -108,7 +111,12 @@ export function LoginForm({ context, baseDomain, tenant, error }: Props) {
           </>
         )}
       </Card>
-      {context === 'app' && <p className="mt-4 text-xs leading-5 text-slate-500">Регистрации нет: аккаунт создаёт администратор вашей компании.</p>}
+      {context === 'app' && (
+        <>
+          <Link href="/reset-password" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">Забыли пароль?</Link>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Регистрации нет: доступ даёт приглашение от администратора вашей компании.</p>
+        </>
+      )}
     </Centered>
   );
 }

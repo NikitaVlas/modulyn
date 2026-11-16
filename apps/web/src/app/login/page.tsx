@@ -15,6 +15,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       baseDomain={site.baseDomain}
       tenant={tenant && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(tenant) ? tenant : undefined}
       error={firstParam(params.error)}
+      returnTo={site.kind === 'app' && firstParam(params.next) === 'invite' ? 'invite' : undefined}
     />
   );
 }

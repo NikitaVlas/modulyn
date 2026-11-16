@@ -111,6 +111,36 @@ export class AuthStore {
     });
   }
 
+  // ───────────── Восстановление пароля (5.6, C7) ─────────────
+
+  /** Новая ссылка; прежние неиспользованные ссылки этого человека перестают работать. */
+  async createPasswordReset(userId: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    const client = await this.client();
+    await client.$transaction([
+      client.passwordReset.deleteMany({ where: { OR: [{ userId, usedAt: null }, { expiresAt: { lt: new Date() } }] } }),
+      client.passwordReset.create({ data: { userId, tokenHash, expiresAt } }),
+    ]);
+  }
+
+  /**
+   * Одноразовый обмен ссылки на новый пароль: условный UPDATE used_at, новый пароль, подтверждённый email
+   * (человек получил письмо). Возвращает userId или null без уточнения причины.
+   */
+  async resetPassword(tokenHash: string, passwordHash: string): Promise<string | null> {
+    const client = await this.client();
+    return client.$transaction(async tx => {
+      const now = new Date();
+      const claimed = await tx.passwordReset.updateManyAndReturn({ where: { tokenHash, usedAt: null, expiresAt: { gt: now } }, data: { usedAt: now } });
+      const reset = claimed[0];
+      if (!reset) return null;
+      const { count } = await tx.user.updateMany({
+        where: { id: reset.userId, isActive: true },
+        data: { passwordHash, passwordChangeRequired: false, tempPasswordExpiresAt: null, emailVerifiedAt: now },
+      });
+      return count === 1 ? reset.userId : null;
+    });
+  }
+
   // ───────────── Второй фактор платформы (B2, B10) ─────────────
 
   /** Новый секрет при настройке. Пока второй фактор не подтверждён кодом, его можно перевыпускать. */

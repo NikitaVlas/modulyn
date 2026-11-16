@@ -38,4 +38,9 @@ export class ThrottleService {
   async succeeded(scope: string, ip: string | undefined, account: string): Promise<void> {
     await this.store.throttleReset(this.keys(scope, ip, account).account);
   }
+
+  /** Общий счётчик: учитывает попытку и сообщает, превышен ли лимит в окне (письма восстановления пароля, C7). */
+  async exceeded(key: string, max: number, windowMs: number): Promise<boolean> {
+    return (await this.store.throttleHit(this.tokens.throttleKey(key), windowMs)) > max;
+  }
 }

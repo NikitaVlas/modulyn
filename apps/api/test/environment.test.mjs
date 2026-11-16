@@ -53,3 +53,11 @@ test('the TOTP encryption key is required and must be 32 bytes in hex', () => {
   assert.throws(() => parseEnvironment({ ...base, PLATFORM_TOTP_KEY: 'ab'.repeat(16) }), /PLATFORM_TOTP_KEY/);
   assert.equal(parseEnvironment(base).totpKey.length, 32);
 });
+test('mail: SMTP URL scheme is checked; memory: only outside production', () => {
+  assert.equal(parseEnvironment(base).smtpUrl, undefined);
+  assert.equal(parseEnvironment({ ...base, SMTP_URL: 'smtp://127.0.0.1:1025' }).smtpUrl, 'smtp://127.0.0.1:1025');
+  assert.throws(() => parseEnvironment({ ...base, SMTP_URL: 'http://mail' }), /SMTP_URL/);
+  assert.throws(() => parseEnvironment({ ...base, NODE_ENV: 'production', SMTP_URL: 'memory:' }), /memory/);
+  assert.match(parseEnvironment(base).mailFrom, /no-reply@modulyn\.localhost/);
+  assert.throws(() => parseEnvironment({ ...base, MAIL_FROM: 'x\r\nBcc: evil@example.com' }), /MAIL_FROM/);
+});

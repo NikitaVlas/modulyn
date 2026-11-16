@@ -186,3 +186,18 @@ test('guard: a restricted session reaches only routes that allow its restriction
   await assert.rejects(guardWith({ meta: { 'modulyn:allow-restricted': ['mfa-setup'] }, principal: temp })({ kind: 'app', host: 'app.localhost:8080' }),
     e => e.getResponse().code === 'PASSWORD_CHANGE_REQUIRED');
 });
+
+// ───────────── Phase 5: письма ─────────────
+const { invitationMail, passwordResetMail } = await import('../dist/mail/templates.js');
+
+test('mail templates escape names and carry only the link', () => {
+  const m = invitationMail({ to: 'a@b.example', companyName: 'Nova <script>', inviterName: 'Anna "A"', link: 'http://app.localhost:8080/invite#tok' });
+  assert.equal(m.subject, 'Приглашение в Nova <script>');
+  assert.doesNotMatch(m.html, /<script>/);
+  assert.match(m.html, /Nova &#60;script&#62;/);
+  assert.match(m.text, /Anna "A" приглашает вас в Nova <script>\./);
+  assert.match(m.text, /invite#tok/);
+  const r = passwordResetMail({ to: 'a@b.example', link: 'http://app.localhost:8080/reset-password#t' });
+  assert.match(r.text, /1 час/);
+  assert.match(r.html, /reset-password#t/);
+});

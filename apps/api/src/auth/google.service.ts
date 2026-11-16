@@ -49,8 +49,8 @@ export class GoogleService {
     return { url: url.href, state, nonce, verifier };
   }
 
-  /** Аккаунт для вернувшегося из Google пользователя или null (без уточнения причины). */
-  async finish(query: string, checks: { state: string; nonce: string; verifier: string }): Promise<LoginUser | null> {
+  /** Проверенные openid-client данные Google-аккаунта или null. */
+  async verify(query: string, checks: { state: string; nonce: string; verifier: string }): Promise<GoogleClaims | null> {
     let claims: oidc.IDToken | undefined;
     try {
       const config = await this.configuration();
@@ -63,16 +63,32 @@ export class GoogleService {
       return null;
     }
     if (!claims || typeof claims.sub !== 'string') return null;
+    return {
+      sub: claims.sub,
+      email: typeof claims.email === 'string' ? claims.email.trim().toLowerCase() : null,
+      emailVerified: claims.email_verified === true,
+    };
+  }
 
+  /**
+   * Существующий аккаунт для Google-входа или null (регистрации нет, A12): по sub или, при первой привязке,
+   * по подтверждённому email, совпадающему с аккаунтом.
+   */
+  async resolveUser(claims: GoogleClaims): Promise<LoginUser | null> {
     const linked = await this.store.findUserByGoogleSubject(claims.sub);
     if (linked) return linked.isActive ? linked : null;
-
-    // Первая привязка: только подтверждённый Google email, совпадающий с существующим аккаунтом.
-    if (claims.email_verified !== true || typeof claims.email !== 'string') return null;
-    const email = claims.email.trim().toLowerCase();
-    const user = await this.store.findUserByEmail(email);
+    if (!claims.emailVerified || !claims.email) return null;
+    const user = await this.store.findUserByEmail(claims.email);
     if (!user || !user.isActive) return null;
-    if (!(await this.store.linkGoogle(user.id, claims.sub, email))) return null; // у аккаунта уже другой Google
+    if (!(await this.store.linkGoogle(user.id, claims.sub, claims.email))) return null; // у аккаунта уже другой Google
     return user;
   }
+
+  /** Вход обычным способом: verify + resolveUser. */
+  async finish(query: string, checks: { state: string; nonce: string; verifier: string }): Promise<LoginUser | null> {
+    const claims = await this.verify(query, checks);
+    return claims ? this.resolveUser(claims) : null;
+  }
 }
+
+export interface GoogleClaims { sub: string; email: string | null; emailVerified: boolean }

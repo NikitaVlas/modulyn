@@ -49,12 +49,47 @@ export interface PlatformTenant {
 
 export interface CreateTenantRequest { slug: string; name: string; displayName: string; adminEmail: string; adminName: string }
 
-/** temporaryPassword — только если для первого администратора создан новый аккаунт; показывается один раз. */
+/**
+ * C3: первый администратор получает приглашение по email (участником он станет, когда примет его).
+ * invitationSent=false — письмо не ушло (почта не настроена или сбой); можно отправить повторно из карточки.
+ */
 export interface CreateTenantResponse {
   tenant: PlatformTenant;
-  firstAdmin: { email: string; name: string; existingAccount: boolean };
-  temporaryPassword?: string;
+  firstAdmin: { email: string; name: string };
+  invitationSent: boolean;
 }
+
+/** POST /api/platform/tenants/:id/admin-invitations — приглашение администратора компании (C3, C4). */
+export interface AdminInvitationRequest { email: string; name: string }
+export interface InvitationSentResponse { invitationSent: boolean }
+
+// ───────────── Phase 5: участники компании ─────────────
+
+export interface MemberEntry { userId: string; name: string; email: string; role: TenantRole; isActive: boolean; isSelf: boolean }
+export interface PendingInvitation { id: string; email: string; name: string; role: TenantRole; expiresAt: string; createdAt: string; expired: boolean }
+/** GET /api/members — только для администратора компании. Без паролей, сессий и способов входа. */
+export interface MembersResponse { members: MemberEntry[]; invitations: PendingInvitation[] }
+export interface InviteMemberRequest { email: string; name: string; role: TenantRole }
+export interface UpdateMemberRequest { role?: TenantRole; isActive?: boolean }
+
+/** POST /api/invitations/inspect — что видит человек по ссылке из письма. */
+export interface InvitationInspectResponse {
+  companyName: string; email: string; name: string; role: TenantRole;
+  /** used — ссылка уже использована, отозвана или истекла. */
+  status: 'open' | 'used';
+  /** Есть ли аккаунт с этим email — знает только владелец ссылки (то есть сам приглашённый). */
+  accountExists: boolean;
+  /** Email, под которым браузер вошёл на app.<домен>, или null. */
+  signedInAs: string | null;
+  google: boolean;
+}
+/** POST /api/invitations/accept: для нового аккаунта — name и password; для существующего — вход заранее. */
+export interface InvitationAcceptRequest { token: string; name?: string; password?: string }
+export interface InvitationAcceptResponse { tenantSlug: string }
+
+/** Восстановление пароля (5.6). Ответ на запрос всегда одинаковый. */
+export interface PasswordResetRequest { email: string }
+export interface PasswordResetConfirmRequest { token: string; newPassword: string }
 
 /** slug не меняется (B4). */
 export interface UpdateTenantRequest { name?: string; displayName?: string; status?: TenantStatus }

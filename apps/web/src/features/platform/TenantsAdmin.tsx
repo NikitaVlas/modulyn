@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { CreateTenantResponse, PlatformTenant } from '@modulyn/contracts';
+import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant } from '@modulyn/contracts';
 import { Button, Field, Notice } from '../../components/ui';
 import { ApiError, api, originOf, post } from '../auth/api';
 
@@ -113,23 +113,50 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
   );
 }
 
-/** Временный пароль показывается один раз (B3, B8): после закрытия его не восстановить. */
+/** C3: первый администратор получает приглашение по email; пароль платформа больше не видит и не передаёт. */
 function CreatedNotice({ result, baseDomain, onClose }: { result: CreateTenantResponse; baseDomain: string; onClose: () => void }) {
   return (
     <Panel title={`Компания «${result.tenant.displayName}» создана`}>
       <p className="text-sm text-slate-700">Адрес: <span className="font-mono">{originOf(result.tenant.slug, baseDomain)}</span></p>
-      {result.temporaryPassword ? (
-        <div className="mt-4 space-y-2 text-sm">
-          <p>Создан аккаунт администратора <b>{result.firstAdmin.email}</b>. Передайте ему временный пароль — он действует 7 дней, при первом входе его нужно сменить:</p>
-          <p className="rounded-md bg-slate-100 px-3 py-2 font-mono text-base">{result.temporaryPassword}</p>
-          <p className="text-red-700">Пароль показывается только сейчас.</p>
-          <div className="w-48"><Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(result.temporaryPassword ?? '')}>Скопировать</Button></div>
-        </div>
-      ) : (
-        <p className="mt-4 text-sm">Аккаунт <b>{result.firstAdmin.email}</b> уже существовал — он стал администратором компании и входит своим паролем.</p>
-      )}
+      <div className="mt-4">
+        {result.invitationSent
+          ? <Notice tone="info">Приглашение отправлено на {result.firstAdmin.email}. Ссылка действует 7 дней; администратор станет участником, когда примет его.</Notice>
+          : <Notice>Компания создана, но письмо на {result.firstAdmin.email} отправить не удалось. Откройте карточку компании и отправьте приглашение повторно.</Notice>}
+      </div>
       <div className="mt-4 w-32"><Button onClick={onClose}>Готово</Button></div>
     </Panel>
+  );
+}
+
+/** C3/C4: повторная отправка первому администратору или приглашение нового администратора компании. */
+function InviteAdmin({ tenant }: { tenant: PlatformTenant }) {
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const r = await post<InvitationSentResponse>(`/api/platform/tenants/${tenant.id}/admin-invitations`, { email, name });
+      setMessage(r.invitationSent
+        ? { tone: 'info', text: `Приглашение отправлено на ${email}` }
+        : { tone: 'error', text: 'Приглашение создано, но письмо отправить не удалось. Попробуйте позже.' });
+      setEmail(''); setName('');
+    } catch (e) { setMessage({ tone: 'error', text: errorText(e) }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-6 grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <p className="text-sm font-medium sm:col-span-3">Пригласить администратора компании</p>
+      {message && <div className="sm:col-span-3"><Notice tone={message.tone}>{message.text}</Notice></div>}
+      <Field label="Email" type="email" required maxLength={320} value={email} onChange={e => setEmail(e.target.value)} />
+      <Field label="Имя" required maxLength={200} value={name} onChange={e => setName(e.target.value)} />
+      <div className="w-full sm:w-40"><Button type="submit" variant="secondary" disabled={busy || tenant.status !== 'ACTIVE'}>Пригласить</Button></div>
+    </form>
   );
 }
 
@@ -174,6 +201,7 @@ function TenantDetails({ tenant, baseDomain, onClose, onChanged }: { tenant: Pla
           <div className="w-32"><Button type="button" variant="secondary" onClick={onClose}>Закрыть</Button></div>
         </div>
       </form>
+      <InviteAdmin tenant={tenant} />
     </Panel>
   );
 }

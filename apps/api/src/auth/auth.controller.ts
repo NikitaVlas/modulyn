@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
-  BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Post, Query, Req, Res,
+  BadRequestException, Body, ConflictException, Controller, Get, HttpCode, HttpException, NotFoundException, Post, Query, Req, Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -10,6 +10,9 @@ import type {
 } from '@modulyn/contracts';
 import { originFor, parseEnvironment } from '../config/environment.js';
 import { AuthStore, type LoginAdmin } from '../database/auth-store.service.js';
+import { MembersStore } from '../database/members-store.service.js';
+import { MailService } from '../mail/mail.service.js';
+import { passwordResetMail } from '../mail/templates.js';
 import { SLUG_PATTERN } from '../tenancy/hostname.js';
 import { currentRequestContext, type RequestContext } from '../tenancy/request-context.js';
 import { HANDOFF_CODE_TTL_MS, HANDOFF_STATE_TTL_MS, MFA_PENDING_TTL_MS, OIDC_STATE_TTL_MS, PASSWORD_MAX } from './auth.constants.js';
@@ -63,6 +66,8 @@ export class AuthController {
     private readonly throttle: ThrottleService,
     private readonly google: GoogleService,
     private readonly tokens: TokensService,
+    private readonly members: MembersStore,
+    private readonly mail: MailService,
   ) {}
 
   // ───────────── Справочное для страницы входа ─────────────
@@ -424,9 +429,77 @@ export class AuthController {
       return;
     }
     const query = req.originalUrl.includes('?') ? req.originalUrl.slice(req.originalUrl.indexOf('?') + 1) : '';
-    const user = await this.google.finish(query, { state: saved.state, nonce: saved.nonce, verifier: saved.verifier });
-    if (!user) { res.redirect(303, failure); return; }
-    await this.sessions.startApp(res, user.id);
+    const checks = { state: saved.state, nonce: saved.nonce, verifier: saved.verifier };
+    const userId = typeof saved.invite === 'string'
+      ? await this.acceptInvitationWithGoogle(saved.invite, query, checks)
+      : (await this.google.finish(query, checks))?.id ?? null;
+    if (!userId) {
+      res.redirect(303, typeof saved.invite === 'string' ? `${this.appOrigin}/invite?error=google` : failure);
+      return;
+    }
+    await this.sessions.startApp(res, userId);
     res.redirect(303, tenant ? originFor(this.env, tenant) + '/api/auth/handoff/start' : this.appOrigin + '/');
+  }
+
+  /**
+   * Приглашение через Google (C2): Google должен подтвердить email, совпадающий с email приглашения.
+   * Аккаунт есть — принимает он (Google привязывается при совпадении email); нет — создаётся с привязкой Google, без пароля.
+   */
+  private async acceptInvitationWithGoogle(inviteHash: string, query: string, checks: { state: string; nonce: string; verifier: string }): Promise<string | null> {
+    const claims = await this.google.verify(query, checks);
+    const info = await this.members.inspect(inviteHash);
+    if (!claims || !info || !info.open || !claims.emailVerified || claims.email !== info.email) return null;
+    const existing = await this.google.resolveUser(claims);
+    const byEmail = existing ?? await this.store.findUserByEmail(info.email);
+    const account = byEmail
+      ? (byEmail.email === info.email ? { kind: 'existing' as const, userId: byEmail.id } : null)
+      : { kind: 'new' as const, name: info.name, passwordHash: null, googleSubject: claims.sub };
+    if (!account) return null;
+    return (await this.members.accept(inviteHash, account, info.email))?.userId ?? null;
+  }
+
+  // ───────────── Восстановление пароля (5.6, C7) ─────────────
+
+  /**
+   * Ответ всегда одинаковый — по нему нельзя узнать, есть ли аккаунт. Письмо отправляется в фоне,
+   * чтобы время ответа тоже не выдавало существование аккаунта. Лимиты: 20 запросов в час с IP, 3 письма в час на email.
+   * Только для пользователей компаний: у администраторов платформы восстановление — командой на сервере.
+   */
+  @Public() @Contexts('app') @Post('password-reset/request') @HttpCode(202)
+  async requestPasswordReset(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<{ ok: true }> {
+    const ctx = context();
+    const email = (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).email === 'string')
+      ? ((body as Record<string, unknown>).email as string).trim().toLowerCase() : '';
+    if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) throw new BadRequestException('Укажите корректный email');
+    if (await this.throttle.exceeded(`reset-ip:${ctx.ip ?? 'unknown'}`, 20, 60 * 60_000)) {
+      res.setHeader('Retry-After', '3600');
+      throw new HttpException({ statusCode: 429, message: 'Слишком много запросов. Попробуйте позже.' }, 429);
+    }
+    void this.sendPasswordReset(email).catch(() => undefined);
+    return { ok: true };
+  }
+
+  private async sendPasswordReset(email: string): Promise<void> {
+    if (await this.throttle.exceeded(`reset-email:${email}`, 3, 60 * 60_000)) return;
+    const user = await this.store.findUserByEmail(email);
+    if (!user || !user.isActive) return;
+    const token = this.tokens.randomToken();
+    await this.store.createPasswordReset(user.id, this.tokens.hash(token), new Date(Date.now() + 60 * 60_000));
+    await this.mail.send(passwordResetMail({ to: email, link: `${this.appOrigin}/reset-password#${token}` }));
+  }
+
+  /** Новый пароль по ссылке: одноразово, 1 час; после смены все сессии человека завершаются. */
+  @Public() @Contexts('app') @Post('password-reset/confirm') @HttpCode(204)
+  async confirmPasswordReset(@Body() body: unknown, @Res({ passthrough: true }) res: Response): Promise<void> {
+    const fields = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {};
+    const token = fields.token;
+    const password = typeof fields.newPassword === 'string' ? fields.newPassword : '';
+    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) throw new BadRequestException('Ссылка недействительна или устарела');
+    const policy = passwordPolicyError(password);
+    if (policy) throw new BadRequestException(policy);
+    const userId = await this.store.resetPassword(this.tokens.hash(token), await this.passwords.hash(password));
+    if (!userId) throw new BadRequestException('Ссылка недействительна или устарела. Запросите новую.');
+    await this.store.revokeAllUserSessions(userId);
+    this.sessions.clear(res);
   }
 }

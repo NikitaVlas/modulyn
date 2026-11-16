@@ -1,8 +1,8 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
-import type { CreateTenantResponse, PlatformTenant } from '@modulyn/contracts';
-import { TEMP_PASSWORD_TTL_MS } from '../auth/auth.constants.js';
+import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant } from '@modulyn/contracts';
 import { Contexts, CurrentPlatformAdmin } from '../auth/decorators.js';
-import { PasswordService, temporaryPassword } from '../auth/password.service.js';
+import { InvitationsService } from '../members/invitations.service.js';
+import { inviteFields } from '../members/members.controller.js';
 import { PlatformStore, SlugTakenError, type TenantRow } from '../database/platform-store.service.js';
 import { RESERVED_SUBDOMAINS, SLUG_PATTERN } from '../tenancy/hostname.js';
 import type { PlatformPrincipal } from '../tenancy/request-context.js';
@@ -38,7 +38,7 @@ function toResponse(row: TenantRow): PlatformTenant {
 @Contexts('platform')
 @Controller('platform/tenants')
 export class PlatformTenantsController {
-  constructor(private readonly store: PlatformStore, private readonly passwords: PasswordService) {}
+  constructor(private readonly store: PlatformStore, private readonly invitations: InvitationsService) {}
 
   @Get()
   async list(): Promise<PlatformTenant[]> {
@@ -53,7 +53,7 @@ export class PlatformTenantsController {
     return toResponse(tenant);
   }
 
-  /** Создание компании вместе с первым администратором (B3). Временный пароль — только в этом ответе. */
+  /** Создание компании и приглашение первому администратору по email (C3). */
   @Post() @HttpCode(201)
   async create(@Body() raw: unknown, @CurrentPlatformAdmin() admin: PlatformPrincipal): Promise<CreateTenantResponse> {
     const body = fields(raw);
@@ -68,23 +68,32 @@ export class PlatformTenantsController {
     const adminEmail = typeof body.adminEmail === 'string' ? body.adminEmail.trim().toLowerCase() : '';
     if (adminEmail.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) throw new BadRequestException('Укажите корректный email администратора');
 
-    // Пароль готовится заранее: хешировать внутри транзакции — держать соединение лишние 50 мс.
-    const password = temporaryPassword();
-    const passwordHash = await this.passwords.hash(password);
+    const { token, tokenHash, expiresAt } = this.invitations.newToken();
     try {
-      const created = await this.store.createTenant({
-        slug, name, displayName, admin: { email: adminEmail, name: adminName },
-        newAccount: { passwordHash, tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_TTL_MS) },
-      }, admin.adminId);
-      return {
-        tenant: toResponse(created.tenant),
-        firstAdmin: { email: adminEmail, name: created.adminName, existingAccount: created.existingAccount },
-        ...(created.existingAccount ? {} : { temporaryPassword: password }),
-      };
+      const created = await this.store.createTenant({ slug, name, displayName, admin: { email: adminEmail, name: adminName, tokenHash, expiresAt } }, admin.adminId);
+      // Письмо — после фиксации транзакции: при сбое почты компания и приглашение остаются, письмо можно отправить повторно.
+      const invitationSent = await this.invitations.sendInvitation(adminEmail, displayName, null, token);
+      return { tenant: toResponse(created.tenant), firstAdmin: { email: adminEmail, name: adminName }, invitationSent };
     } catch (error) {
       if (error instanceof SlugTakenError) throw new ConflictException(`Поддомен «${slug}» уже занят`);
       throw error;
     }
+  }
+
+  /**
+   * Приглашение администратора компании платформой (C3 — повторная отправка первому администратору, C4 — новый
+   * администратор, если в компании их не осталось). Платформа не видит участников и не узнаёт, есть ли аккаунт.
+   */
+  @Post(':id/admin-invitations') @HttpCode(201)
+  async inviteAdmin(@Param('id') id: string, @Body() raw: unknown, @CurrentPlatformAdmin() admin: PlatformPrincipal): Promise<InvitationSentResponse> {
+    if (!UUID.test(id)) throw new NotFoundException();
+    const tenant = await this.store.getTenant(id);
+    if (!tenant) throw new NotFoundException();
+    if (tenant.status !== 'ACTIVE') throw new ConflictException('Компания отключена');
+    const { email, name } = inviteFields(raw);
+    const invitationSent = await this.invitations.issue(tenant.id, tenant.displayName, { email, name, role: 'TENANT_ADMIN' }, null);
+    await this.store.auditAdminInvitation(tenant.id, admin.adminId);
+    return { invitationSent };
   }
 
   /** Названия и статус (B4, B5). Поддомен не меняется — поле slug отклоняется явно. */

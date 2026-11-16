@@ -15,7 +15,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "dev": "node scripts/dev.mjs",
     "env:init": "node scripts/init-env.mjs",
-    "infra:up": "docker compose up -d db",
+    "infra:up": "docker compose up -d db mailpit",
     "db:roles": "node scripts/db.mjs roles",
     "db:migrate": "node scripts/db.mjs migrate",
     "db:setup": "node scripts/db.mjs setup",

@@ -17,9 +17,8 @@ export interface TenantRow {
 
 export interface NewTenant {
   slug: string; name: string; displayName: string;
-  admin: { email: string; name: string };
-  /** Хеш временного пароля и срок — если для первого администратора нужен новый аккаунт (B3, B8). */
-  newAccount: { passwordHash: string; tempPasswordExpiresAt: Date };
+  /** C3: приглашение первому администратору (вместо временного пароля B3). */
+  admin: { email: string; name: string; tokenHash: string; expiresAt: Date };
 }
 
 export class SlugTakenError extends Error {
@@ -53,38 +52,35 @@ export class PlatformStore {
   }
 
   /**
-   * Компания и её первый администратор в ОДНОЙ транзакции: при любой ошибке не остаётся компании без администратора.
-   * Существующий аккаунт (по email) получает участие; иначе создаётся аккаунт с временным паролем.
+   * Компания и приглашение её первому администратору в ОДНОЙ транзакции (C3). Аккаунт и участие появятся,
+   * когда человек примет приглашение; платформа не узнаёт, был ли у него аккаунт (C2).
    */
-  async createTenant(input: NewTenant, actorAdminId: string): Promise<{ tenant: TenantRow; existingAccount: boolean; adminName: string }> {
+  async createTenant(input: NewTenant, actorAdminId: string): Promise<{ tenant: TenantRow }> {
     const client = await this.client();
     try {
       return await client.$transaction(async tx => {
         const tenant = await tx.tenant.create({
           data: { slug: input.slug, name: input.name, displayName: input.displayName }, select: TENANT_SELECT,
         });
-        let user = await tx.user.findUnique({ where: { email: input.admin.email }, select: { id: true, name: true } });
-        const existingAccount = user !== null;
-        user ??= await tx.user.create({
-          data: {
-            email: input.admin.email, name: input.admin.name, passwordHash: input.newAccount.passwordHash,
-            passwordChangeRequired: true, tempPasswordExpiresAt: input.newAccount.tempPasswordExpiresAt,
-          },
-          select: { id: true, name: true },
-        });
-        // Участие — запись компании: контекст компании внутри той же транзакции (RLS WITH CHECK).
+        // Приглашение — запись компании: контекст компании внутри той же транзакции (RLS WITH CHECK).
         await tx.$queryRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
-        await tx.membership.create({ data: { tenantId: tenant.id, userId: user.id, role: 'TENANT_ADMIN' } });
-        await tx.tenantAuditLog.create({ data: { tenantId: tenant.id, action: 'membership.created_by_platform', entityType: 'membership' } });
-        await tx.platformAuditLog.create({
-          data: { action: 'tenant.created', actorAdminId, targetTenantId: tenant.id, metadata: { firstAdmin: existingAccount ? 'existing-account' : 'new-account' } },
+        const invitation = await tx.invitation.create({
+          data: { tenantId: tenant.id, email: input.admin.email, name: input.admin.name, role: 'TENANT_ADMIN', tokenHash: input.admin.tokenHash, expiresAt: input.admin.expiresAt },
+          select: { id: true },
         });
-        return { tenant: { ...tenant, activeMembers: 1 }, existingAccount, adminName: user.name };
+        await tx.tenantAuditLog.create({ data: { tenantId: tenant.id, action: 'invitation.created_by_platform', entityType: 'invitation', entityId: invitation.id } });
+        await tx.platformAuditLog.create({ data: { action: 'tenant.created', actorAdminId, targetTenantId: tenant.id, metadata: { firstAdmin: 'invited' } } });
+        return { tenant: { ...tenant, activeMembers: 0 } };
       });
     } catch (error) {
       if ((error as { code?: string }).code === 'P2002') throw new SlugTakenError();
       throw error;
     }
+  }
+
+  /** Аудит приглашения администратора компании платформой (C4: например, если администраторов не осталось). */
+  async auditAdminInvitation(tenantId: string, actorAdminId: string): Promise<void> {
+    await (await this.client()).platformAuditLog.create({ data: { action: 'tenant.admin_invited', actorAdminId, targetTenantId: tenantId } });
   }
 
   /**
