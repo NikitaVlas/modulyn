@@ -1,0 +1,220 @@
+// Modulyn — модель данных. Согласована 2026-11-16 (specs/phase2_design.md, редакция 2).
+// В этом файле только таблицы, мигрированные на текущий момент (D4):
+// Phase 2 — tenants, users, memberships, platform_admins, modules, tenant_modules,
+// leads, lead_status_history, tenant_audit_logs, platform_audit_logs.
+// Сессии и Google-вход добавляются миграцией Phase 3, приём заявок — Phase 8.
+//
+// Всё, что Prisma не выражает (CHECK, RLS, политики, GRANT), — в SQL миграций.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────── Справочники ─────────────
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum MembershipRole {
+  TENANT_ADMIN
+  MANAGER
+}
+
+enum LeadStatus {
+  NEW
+  IN_PROGRESS
+  CONTACTED
+  CONVERTED
+  CLOSED
+}
+
+enum LeadSource {
+  WEB_FORM
+  MANUAL
+}
+
+// ═════════════ Глобальные таблицы (без tenant_id, без RLS) ═════════════
+
+model Tenant {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  slug        String       @unique @db.VarChar(63)
+  name        String       @db.VarChar(200)
+  displayName String       @map("display_name") @db.VarChar(200)
+  status      TenantStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships       Membership[]
+  modules           TenantModule[]
+  leads             Lead[]
+  leadStatusHistory LeadStatusHistory[]
+  auditLogs         TenantAuditLog[]
+  platformAuditLogs PlatformAuditLog[]
+
+  @@map("tenants")
+}
+
+/// Человек. Один аккаунт на все компании (D1′).
+model User {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  email           String    @unique @db.VarChar(320)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(3)
+  passwordHash    String?   @map("password_hash")
+  name            String    @db.VarChar(200)
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+
+  @@map("users")
+}
+
+model PlatformAdmin {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  email        String   @unique @db.VarChar(320)
+  passwordHash String   @map("password_hash")
+  name         String   @db.VarChar(200)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  auditLogs PlatformAuditLog[]
+
+  @@map("platform_admins")
+}
+
+model PlatformAuditLog {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  actorAdminId   String?  @map("actor_admin_id") @db.Uuid
+  targetTenantId String?  @map("target_tenant_id") @db.Uuid
+  action         String   @db.VarChar(100)
+  metadata       Json?    @db.JsonB
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor        PlatformAdmin? @relation(fields: [actorAdminId], references: [id], onDelete: Restrict)
+  targetTenant Tenant?        @relation(fields: [targetTenantId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([targetTenantId, createdAt])
+  @@map("platform_audit_logs")
+}
+
+model Module {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  key         String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenants TenantModule[]
+
+  @@map("modules")
+}
+
+// ═════════════ Данные компаний (tenant_id + RLS) ═════════════
+
+/// Участие пользователя в компании. Цель составных FK (tenant_id, user_id).
+model Membership {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  tenantId  String         @map("tenant_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  role      MembershipRole
+  isActive  Boolean        @default(true) @map("is_active")
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  user          User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assignedLeads Lead[]              @relation("LeadAssignee")
+  statusChanges LeadStatusHistory[]
+  auditLogs     TenantAuditLog[]
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model TenantModule {
+  tenantId  String   @map("tenant_id") @db.Uuid
+  moduleId  String   @map("module_id") @db.Uuid
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Restrict)
+
+  @@id([tenantId, moduleId])
+  @@map("tenant_modules")
+}
+
+model Lead {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  name         String     @db.VarChar(200)
+  email        String?    @db.VarChar(320)
+  phone        String?    @db.VarChar(50)
+  message      String?
+  source       LeadSource
+  sourceDetail String?    @map("source_detail") @db.VarChar(100)
+  status       LeadStatus @default(NEW)
+  assignedToId String?    @map("assigned_to_id") @db.Uuid
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  // Назначение снимается записью assignedToId = null, не disconnect (иначе Prisma обнулит и tenantId).
+  assignee      Membership?         @relation("LeadAssignee", fields: [tenantId, assignedToId], references: [tenantId, userId], onDelete: Restrict)
+  statusHistory LeadStatusHistory[]
+
+  @@unique([tenantId, id])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, status, createdAt(sort: Desc)])
+  @@index([tenantId, assignedToId])
+  @@map("leads")
+}
+
+model LeadStatusHistory {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  leadId         String      @map("lead_id") @db.Uuid
+  previousStatus LeadStatus? @map("previous_status")
+  newStatus      LeadStatus  @map("new_status")
+  changedById    String?     @map("changed_by_id") @db.Uuid
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  lead      Lead        @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Restrict)
+  changedBy Membership? @relation(fields: [tenantId, changedById], references: [tenantId, userId], onDelete: Restrict)
+
+  @@index([tenantId, leadId, createdAt])
+  @@map("lead_status_history")
+}
+
+model TenantAuditLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  entityType  String?  @map("entity_type") @db.VarChar(50)
+  entityId    String?  @map("entity_id") @db.Uuid
+  metadata    Json?    @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor  Membership? @relation(fields: [tenantId, actorUserId], references: [tenantId, userId], onDelete: Restrict)
+
+  @@index([tenantId, createdAt])
+  @@map("tenant_audit_logs")
+}

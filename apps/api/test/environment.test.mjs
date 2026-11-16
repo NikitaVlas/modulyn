@@ -13,3 +13,15 @@ test('database validation never includes credentials in errors', () => {
   }
 });
 test('unknown runtime environment is rejected', () => { assert.throws(() => parseEnvironment({ ...base, NODE_ENV: 'prod' }), /NODE_ENV/); });
+test('base domain defaults to localhost and rejects scheme, port or upper case', () => {
+  assert.equal(parseEnvironment(base).appBaseDomain, 'localhost');
+  assert.equal(parseEnvironment({ ...base, APP_BASE_DOMAIN: 'modulyn.app' }).appBaseDomain, 'modulyn.app');
+  for (const APP_BASE_DOMAIN of ['https://modulyn.app', 'modulyn.app:443', 'Modulyn.app', '.modulyn.app', '']) {
+    assert.throws(() => parseEnvironment({ ...base, APP_BASE_DOMAIN }), /APP_BASE_DOMAIN/);
+  }
+});
+test('dev proxy host trust is opt-in and forbidden in production', () => {
+  assert.equal(parseEnvironment(base).trustDevProxyHost, false);
+  assert.equal(parseEnvironment({ ...base, TRUST_DEV_PROXY_HOST: 'true' }).trustDevProxyHost, true);
+  assert.throws(() => parseEnvironment({ ...base, NODE_ENV: 'production', TRUST_DEV_PROXY_HOST: 'true' }), /TRUST_DEV_PROXY_HOST/);
+});

@@ -31,7 +31,19 @@ assert.equal(ready.status, 200);
 assert.deepEqual(JSON.parse(ready.body), { status: 'ready', database: 'up' });
 const missing = await request('/api/does-not-exist');
 assert.equal(missing.status, 404);
+const port = ':' + (origin.port || 80);
 for (const host of ['nova.localhost', 'company-b.localhost', 'admin.localhost']) {
-  assert.equal((await request('/', host + ':' + (origin.port || 80))).status, 200);
+  assert.equal((await request('/', host + port)).status, 200);
 }
-console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames');
+// Phase 2: компания определяется по hostname. Нужны синтетические данные: pnpm db:seed.
+const nova = await request('/api/tenant', 'nova.localhost' + port);
+if (nova.status === 404) throw new Error('nova.localhost is unknown to the API: run pnpm db:seed first');
+assert.equal(nova.status, 200);
+assert.deepEqual(JSON.parse(nova.body), { slug: 'nova', displayName: 'Nova CRM' });
+assert.equal(JSON.parse((await request('/api/tenant', 'company-b.localhost' + port)).body).slug, 'company-b');
+const unknown = await request('/api/tenant', 'unknown-company.localhost' + port);
+const suspended = await request('/api/tenant', 'suspended-co.localhost' + port);
+assert.equal(unknown.status, 404);
+assert.deepEqual([suspended.status, suspended.body], [unknown.status, unknown.body]);
+assert.equal((await request('/api/tenant', 'admin.localhost' + port)).status, 404);
+console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin)');

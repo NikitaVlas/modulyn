@@ -4,16 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "prisma generate --no-hints",
+    "build": "prisma generate --no-hints && tsc -p tsconfig.json",
+    "typecheck": "prisma generate --no-hints && tsc -p tsconfig.json --noEmit",
     "start": "node dist/main.js",
-    "test": "pnpm build && node --test test/*.test.mjs"
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "test:integration": "pnpm build && node --test --test-concurrency=1 --test-timeout=60000 test/integration/*.test.mjs"
   },
   "dependencies": {
     "@modulyn/contracts": "workspace:*",
     "@nestjs/common": "12.5.0",
     "@nestjs/core": "12.5.0",
     "@nestjs/platform-express": "12.5.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "helmet": "8.3.0",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
@@ -21,6 +25,8 @@
   },
   "devDependencies": {
     "@modulyn/config": "workspace:*",
-    "@types/pg": "8.23.1"
+    "@types/express": "5.0.6",
+    "@types/pg": "8.23.1",
+    "prisma": "7.10.1"
   }
 }

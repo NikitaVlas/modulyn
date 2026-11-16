@@ -15,6 +15,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+  # Одноразовый шаг перед API: роли БД (суперпользователь) и prisma migrate deploy (владелец схемы).
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      DATABASE_ADMIN_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgresql://modulyn_owner:${DB_OWNER_PASSWORD:?Run pnpm env:init}@db:5432/${POSTGRES_DB}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?Run pnpm env:init}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Run pnpm env:init}
+    command: ["sh", "-c", "node apps/api/scripts/db-roles.mjs && cd apps/api && node node_modules/prisma/build/index.js migrate deploy"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
   api:
     build:
       context: .
@@ -22,10 +38,12 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: 3001
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
+      # Runtime-роль без обхода RLS; суперпользователь и владелец схемы API не передаются.
+      DATABASE_URL: postgresql://modulyn_app:${DB_APP_PASSWORD:?Run pnpm env:init}@db:5432/${POSTGRES_DB}
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

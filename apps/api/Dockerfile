@@ -1,4 +1,6 @@
 FROM node:26.13.0-bookworm-slim AS build
+# Prisma определяет версию OpenSSL для загрузки schema engine; в slim-образе её нет.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm install --global pnpm@12.21.0
@@ -13,6 +15,8 @@ COPY packages ./packages
 RUN pnpm --filter @modulyn/api... build
 
 FROM node:26.13.0-bookworm-slim AS runtime
+# schema engine (prisma migrate deploy в сервисе migrate) требует OpenSSL.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
 COPY --from=build --chown=node:node /app /app
