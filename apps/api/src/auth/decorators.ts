@@ -1,4 +1,5 @@
 import { SetMetadata, createParamDecorator } from '@nestjs/common';
+import type { ModuleKey } from '../modules/registry.js';
 import { currentRequestContext, type AppPrincipal, type ContextKind, type PlatformPrincipal, type Restriction, type TenantPrincipal, type TenantRole } from '../tenancy/request-context.js';
 
 export const PUBLIC_KEY = 'modulyn:public';
@@ -16,6 +17,13 @@ export const Contexts = (...kinds: ContextKind[]) => SetMetadata(CONTEXTS_KEY, k
 
 /** Роли в компании, которым разрешён маршрут (только tenant-контекст). Нет роли — 403. */
 export const Roles = (...roles: TenantRole[]) => SetMetadata(ROLES_KEY, roles);
+
+export const MODULE_KEY = 'modulyn:module';
+/**
+ * Маршрут принадлежит модулю (Phase 6, M6): при отключённом у компании модуле — 403 MODULE_DISABLED.
+ * Ставится на класс контроллера модуля, чтобы новый маршрут не остался без защиты.
+ */
+export const RequireModule = (key: ModuleKey) => SetMetadata(MODULE_KEY, key);
 
 export const ALLOW_RESTRICTED_KEY = 'modulyn:allow-restricted';
 /**

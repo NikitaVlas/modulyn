@@ -1,9 +1,11 @@
 import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post } from '@nestjs/common';
-import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant } from '@modulyn/contracts';
+import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant, PlatformTenantModule } from '@modulyn/contracts';
 import { Contexts, CurrentPlatformAdmin } from '../auth/decorators.js';
 import { InvitationsService } from '../members/invitations.service.js';
 import { inviteFields } from '../members/members.controller.js';
+import { ModulesStore } from '../database/modules-store.service.js';
 import { PlatformStore, SlugTakenError, type TenantRow } from '../database/platform-store.service.js';
+import { isModuleKey } from '../modules/registry.js';
 import { RESERVED_SUBDOMAINS, SLUG_PATTERN } from '../tenancy/hostname.js';
 import type { PlatformPrincipal } from '../tenancy/request-context.js';
 
@@ -38,7 +40,7 @@ function toResponse(row: TenantRow): PlatformTenant {
 @Contexts('platform')
 @Controller('platform/tenants')
 export class PlatformTenantsController {
-  constructor(private readonly store: PlatformStore, private readonly invitations: InvitationsService) {}
+  constructor(private readonly store: PlatformStore, private readonly invitations: InvitationsService, private readonly modules: ModulesStore) {}
 
   @Get()
   async list(): Promise<PlatformTenant[]> {
@@ -94,6 +96,24 @@ export class PlatformTenantsController {
     const invitationSent = await this.invitations.issue(tenant.id, tenant.displayName, { email, name, role: 'TENANT_ADMIN' }, null);
     await this.store.auditAdminInvitation(tenant.id, admin.adminId);
     return { invitationSent };
+  }
+
+  /** Модули компании (6.2, M2): все модули реестра и включён ли каждый у этой компании. */
+  @Get(':id/modules')
+  async modulesOf(@Param('id') id: string): Promise<PlatformTenantModule[]> {
+    if (!UUID.test(id) || !(await this.store.getTenant(id))) throw new NotFoundException();
+    return this.modules.stateForTenant(id);
+  }
+
+  /** Включение и отключение модуля для одной компании; данные модуля сохраняются (M5). */
+  @Patch(':id/modules/:key')
+  async setModule(@Param('id') id: string, @Param('key') key: string, @Body() raw: unknown, @CurrentPlatformAdmin() admin: PlatformPrincipal): Promise<PlatformTenantModule[]> {
+    if (!UUID.test(id) || !(await this.store.getTenant(id))) throw new NotFoundException();
+    if (!isModuleKey(key)) throw new BadRequestException('Неизвестный модуль');
+    const enabled = fields(raw).enabled;
+    if (typeof enabled !== 'boolean') throw new BadRequestException('Укажите enabled: true или false');
+    if (!(await this.modules.setEnabled(id, key, enabled, admin.adminId))) throw new BadRequestException('Модуль отсутствует в каталоге. Примените миграции.');
+    return this.modules.stateForTenant(id);
   }
 
   /** Названия и статус (B4, B5). Поддомен не меняется — поле slug отклоняется явно. */

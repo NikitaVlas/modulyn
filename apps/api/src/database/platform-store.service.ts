@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from './database.service.js';
+import { ModulesStore } from './modules-store.service.js';
 import { TenantDb } from './tenant-db.service.js';
 
 /**
@@ -29,7 +30,7 @@ const TENANT_SELECT = { id: true, slug: true, name: true, displayName: true, sta
 
 @Injectable()
 export class PlatformStore {
-  constructor(private readonly database: DatabaseService, private readonly tenantDb: TenantDb) {}
+  constructor(private readonly database: DatabaseService, private readonly tenantDb: TenantDb, private readonly modules: ModulesStore) {}
 
   private async client() {
     await this.database.assertRuntimeRole();
@@ -69,6 +70,7 @@ export class PlatformStore {
           select: { id: true },
         });
         await tx.tenantAuditLog.create({ data: { tenantId: tenant.id, action: 'invitation.created_by_platform', entityType: 'invitation', entityId: invitation.id } });
+        await this.modules.enableDefaults(tx, tenant.id); // M3: «Заявки» включены сразу
         await tx.platformAuditLog.create({ data: { action: 'tenant.created', actorAdminId, targetTenantId: tenant.id, metadata: { firstAdmin: 'invited' } } });
         return { tenant: { ...tenant, activeMembers: 0 } };
       });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant } from '@modulyn/contracts';
+import type { CreateTenantResponse, InvitationSentResponse, PlatformTenant, PlatformTenantModule } from '@modulyn/contracts';
 import { Button, Field, Notice } from '../../components/ui';
 import { ApiError, api, originOf, post } from '../auth/api';
 
@@ -128,6 +128,48 @@ function CreatedNotice({ result, baseDomain, onClose }: { result: CreateTenantRe
   );
 }
 
+/** Модули компании (6.2, M2): включает и отключает только платформа; данные при отключении сохраняются (M5). */
+function TenantModules({ tenant }: { tenant: PlatformTenant }) {
+  const [modules, setModules] = useState<PlatformTenantModule[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  useEffect(() => {
+    api<PlatformTenantModule[]>(`/api/platform/tenants/${tenant.id}/modules`).then(setModules, e => setMessage({ tone: 'error', text: errorText(e) }));
+  }, [tenant.id]);
+
+  async function toggle(m: PlatformTenantModule) {
+    if (m.enabled && !window.confirm(`Отключить «${m.name}» для ${tenant.displayName}? Раздел сразу пропадёт у всех сотрудников компании; данные сохранятся.`)) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      setModules(await api<PlatformTenantModule[]>(`/api/platform/tenants/${tenant.id}/modules/${m.key}`, { method: 'PATCH', body: JSON.stringify({ enabled: !m.enabled }) }));
+      setMessage({ tone: 'info', text: m.enabled ? `«${m.name}» отключён` : `«${m.name}» включён` });
+    } catch (e) { setMessage({ tone: 'error', text: errorText(e) }); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="mt-6 border-t border-slate-200 pt-5">
+      <p className="mb-3 text-sm font-medium">Модули</p>
+      {message && <div className="mb-3"><Notice tone={message.tone}>{message.text}</Notice></div>}
+      {!modules ? <p className="text-sm text-slate-500">Загрузка…</p> : (
+        <ul className="space-y-2">
+          {modules.map(m => (
+            <li key={m.key} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 px-4 py-3">
+              <div><p className="font-medium">{m.name}</p><p className="text-xs text-slate-500">{m.description}</p></div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" role="switch" aria-label={`Модуль ${m.name}`} checked={m.enabled} disabled={busy} onChange={() => void toggle(m)} />
+                {m.enabled ? 'Включён' : 'Выключен'}
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** C3/C4: повторная отправка первому администратору или приглашение нового администратора компании. */
 function InviteAdmin({ tenant }: { tenant: PlatformTenant }) {
   const [email, setEmail] = useState('');
@@ -201,6 +243,7 @@ function TenantDetails({ tenant, baseDomain, onClose, onChanged }: { tenant: Pla
           <div className="w-32"><Button type="button" variant="secondary" onClick={onClose}>Закрыть</Button></div>
         </div>
       </form>
+      <TenantModules tenant={tenant} />
       <InviteAdmin tenant={tenant} />
     </Panel>
   );

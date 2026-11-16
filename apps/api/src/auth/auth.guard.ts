@@ -2,7 +2,9 @@ import { ForbiddenException, Injectable, NotFoundException, UnauthorizedExceptio
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { currentRequestContext, type ContextKind, type Restriction, type TenantRole } from '../tenancy/request-context.js';
-import { ALLOW_RESTRICTED_KEY, CONTEXTS_KEY, PUBLIC_KEY, ROLES_KEY } from './decorators.js';
+import { ModulesStore } from '../database/modules-store.service.js';
+import type { ModuleKey } from '../modules/registry.js';
+import { ALLOW_RESTRICTED_KEY, CONTEXTS_KEY, MODULE_KEY, PUBLIC_KEY, ROLES_KEY } from './decorators.js';
 import { SessionsService } from './sessions.service.js';
 
 const RESTRICTION_CODE: Record<Restriction, string> = {
@@ -18,10 +20,11 @@ const RESTRICTION_CODE: Record<Restriction, string> = {
  * 4. Сессия в БД действует, аккаунт активен; для компании — участие в ЭТОЙ компании активно. Иначе 401.
  * 5. Незавершённый обязательный шаг (временный пароль, настройка второго фактора) — только @AllowRestricted, иначе 403.
  * 6. @Roles(...) — роль из БД (не из токена). Иначе 403.
+ * 7. @RequireModule(...) — модуль включён у компании. Иначе 403 MODULE_DISABLED.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly sessions: SessionsService) {}
+  constructor(private readonly reflector: Reflector, private readonly sessions: SessionsService, private readonly modules: ModulesStore) {}
 
   async canActivate(execution: ExecutionContext): Promise<boolean> {
     const targets = [execution.getHandler(), execution.getClass()];
@@ -48,6 +51,14 @@ export class AuthGuard implements CanActivate {
     const roles = this.reflector.getAllAndOverride<TenantRole[] | undefined>(ROLES_KEY, targets);
     if (roles) {
       if (context.kind !== 'tenant' || !context.principal || !roles.includes(context.principal.role)) throw new ForbiddenException();
+    }
+
+    // 7. Модуль маршрута включён у этой компании (Phase 6, M4, M6). Проверяется после входа: без входа — 401.
+    const module = this.reflector.getAllAndOverride<ModuleKey | undefined>(MODULE_KEY, targets);
+    if (module) {
+      if (context.kind !== 'tenant' || !(await this.modules.isEnabled(context.tenant.tenantId, module))) {
+        throw new ForbiddenException({ statusCode: 403, message: 'Раздел отключён для вашей компании', code: 'MODULE_DISABLED' });
+      }
     }
     return true;
   }

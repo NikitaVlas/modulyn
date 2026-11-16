@@ -99,3 +99,19 @@ export interface AuthProvidersResponse { password: true; google: boolean }
 
 /** Ошибка API: только сообщение для пользователя, без внутренних деталей. */
 export interface ApiError { statusCode: number; message: string | string[] }
+
+// ───────────── Phase 6: модули ─────────────
+
+/** Ключи модулей из реестра кода (apps/api/src/modules/registry.ts). */
+export type ModuleKey = 'leads';
+export type LeadStatus = 'NEW' | 'IN_PROGRESS' | 'CONTACTED' | 'CONVERTED' | 'CLOSED';
+
+/** GET /api/tenant/capabilities — включённые модули компании и роль (для меню). */
+export interface TenantCapabilitiesResponse { modules: ModuleKey[]; role: TenantRole }
+
+/** Модуль в карточке компании на платформе. */
+export interface PlatformTenantModule { key: ModuleKey; name: string; description: string; enabled: boolean }
+export interface SetTenantModuleRequest { enabled: boolean }
+
+/** GET /api/leads/summary — заявки компании по статусам (модуль «Заявки»). */
+export interface LeadsSummaryResponse { total: number; byStatus: Record<LeadStatus, number> }

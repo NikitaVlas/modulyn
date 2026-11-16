@@ -14,6 +14,11 @@ import { TenantDb } from './database/tenant-db.service.js';
 import { TenantDirectory } from './database/tenant-directory.service.js';
 import { PlatformStore } from './database/platform-store.service.js';
 import { MembersStore } from './database/members-store.service.js';
+import { ModulesStore } from './database/modules-store.service.js';
+import { LeadsStore } from './database/leads-store.service.js';
+import { LeadsController } from './leads/leads.controller.js';
+import { CapabilitiesController } from './modules/capabilities.controller.js';
+import { ModulesCatalogCheck } from './modules/modules-catalog.check.js';
 import { HealthController } from './health/health.controller.js';
 import { InvitationsController } from './auth/invitations.controller.js';
 import { MailService } from './mail/mail.service.js';
@@ -24,9 +29,10 @@ import { TenancyMiddleware } from './tenancy/tenancy.middleware.js';
 import { TenantController } from './tenancy/tenant.controller.js';
 
 @Module({
-  controllers: [HealthController, TenantController, AuthController, InvitationsController, MembersController, PlatformTenantsController],
+  controllers: [HealthController, TenantController, CapabilitiesController, AuthController, InvitationsController, MembersController, PlatformTenantsController, LeadsController],
   providers: [
     DatabaseService, TenantDb, TenantDirectory, TenancyMiddleware, PlatformStore, MembersStore, MailService, InvitationsService,
+    ModulesStore, LeadsStore, ModulesCatalogCheck,
     AuthStore, PasswordService, TokensService, SessionsService, ThrottleService, GoogleService, OriginMiddleware,
     // Все маршруты по умолчанию требуют входа; открытые помечены @Public() (подшаг 3.5).
     { provide: APP_GUARD, useClass: AuthGuard },

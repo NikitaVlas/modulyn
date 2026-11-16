@@ -72,12 +72,12 @@ test('password policy: length only, no composition rules', () => {
   assert.notEqual(passwordPolicyError(' '.repeat(20)), null);
 });
 
-function guardWith({ meta = {}, principal = null }) {
+function guardWith({ meta = {}, principal = null, enabled = [] }) {
   const reflector = { getAllAndOverride: key => meta[key] };
   const sessions = {
     authenticateTenant: async () => principal, authenticateApp: async () => principal, authenticatePlatform: async () => principal,
   };
-  const guard = new AuthGuard(reflector, sessions);
+  const guard = new AuthGuard(reflector, sessions, { isEnabled: async (_tenantId, key) => enabled.includes(key) });
   const execution = { getHandler: () => null, getClass: () => null, switchToHttp: () => ({ getRequest: () => ({ headers: {} }) }) };
   return context => runWithRequestContext(context, () => guard.canActivate(execution));
 }
@@ -200,4 +200,15 @@ test('mail templates escape names and carry only the link', () => {
   const r = passwordResetMail({ to: 'a@b.example', link: 'http://app.localhost:8080/reset-password#t' });
   assert.match(r.text, /1 час/);
   assert.match(r.html, /reset-password#t/);
+});
+
+// ───────────── Phase 6: модули ─────────────
+test('guard: a module route needs the module enabled for the company; core routes do not', async () => {
+  const tenantCtx = () => ({ kind: 'tenant', tenant: nova, host: 'nova.localhost:8080' });
+  const manager = { userId: 'u', sessionId: 's', role: 'MANAGER' };
+  await assert.rejects(guardWith({ meta: { 'modulyn:module': 'leads' }, principal: manager })(tenantCtx()),
+    e => e.getStatus() === 403 && e.getResponse().code === 'MODULE_DISABLED');
+  assert.equal(await guardWith({ meta: { 'modulyn:module': 'leads' }, principal: manager, enabled: ['leads'] })(tenantCtx()), true);
+  assert.equal(await guardWith({ principal: manager })(tenantCtx()), true, 'no module on the route — always available');
+  await assert.rejects(guardWith({ meta: { 'modulyn:module': 'leads' } })(tenantCtx()), e => e.getStatus() === 401, 'login is checked before the module');
 });

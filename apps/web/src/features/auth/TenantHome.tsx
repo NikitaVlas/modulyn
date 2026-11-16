@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import type { TenantMeResponse } from '@modulyn/contracts';
+import type { ModuleKey, TenantCapabilitiesResponse, TenantMeResponse } from '@modulyn/contracts';
 import { Brand, Button, Centered, Loading, Notice } from '../../components/ui';
+import { LeadsSummary } from '../leads/LeadsSummary';
 import { MembersAdmin } from '../members/MembersAdmin';
 import { ApiError, api, originOf, post } from './api';
 
@@ -13,13 +14,20 @@ const ROLE: Record<string, string> = { TENANT_ADMIN: 'Администратор
  * Каркас CRM компании (3.7): шапка с названием компании, пользователь, переключатель компаний, выход.
  * Нет сессии этой компании — переход через центральный вход (/api/auth/handoff/start).
  */
-export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain: string; error?: string | undefined; section?: 'home' | 'users' }) {
+export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain: string; error?: string | undefined; section?: 'home' | 'users' | 'leads' }) {
   const [me, setMe] = useState<TenantMeResponse | null>(null);
+  const [modules, setModules] = useState<ModuleKey[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'handoff-error' | 'missing' | 'failed'>(error === 'handoff' ? 'handoff-error' : 'loading');
 
   useEffect(() => {
     if (error === 'handoff') return;
-    api<TenantMeResponse>('/api/auth/me').then(data => { setMe(data); setState('ready'); }, e => {
+    api<TenantMeResponse>('/api/auth/me').then(async data => {
+      // Меню по включённым модулям компании (6.4). Это только удобство: доступ проверяет сервер.
+      const caps = await api<TenantCapabilitiesResponse>('/api/tenant/capabilities').catch(() => ({ modules: [] as ModuleKey[] }));
+      setModules(caps.modules);
+      setMe(data);
+      setState('ready');
+    }, e => {
       // Маршрут API (nginx → Nest), а не страница Next.js: нужна полная навигация браузера.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       if (e instanceof ApiError && e.status === 401) window.location.href = '/api/auth/handoff/start';
@@ -58,6 +66,7 @@ export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain
           </div>
           <nav className="flex flex-wrap items-center gap-2 text-sm">
             <Link href="/" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'home' ? 'font-semibold' : ''}`}>Главная</Link>
+            {modules.includes('leads') && <Link href="/leads" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'leads' ? 'font-semibold' : ''}`}>Заявки</Link>}
             {/* Пункт меню только для администратора; доступ к разделу всё равно проверяет сервер (5.5). */}
             {me.role === 'TENANT_ADMIN' && <Link href="/users" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'users' ? 'font-semibold' : ''}`}>Пользователи</Link>}
             <span className="text-slate-600">{me.user.name} · {ROLE[me.role] ?? me.role}</span>
@@ -71,10 +80,19 @@ export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain
         me.role === 'TENANT_ADMIN'
           ? <MembersAdmin />
           : <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><Notice>Раздел доступен только администратору компании.</Notice></main>
+      ) : section === 'leads' ? (
+        <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+          <h1 className="mb-6 text-2xl font-semibold tracking-tight">Заявки</h1>
+          {/* Сервер сам ответит MODULE_DISABLED, если модуль отключён, — сводка покажет сообщение. */}
+          <LeadsSummary />
+          <p className="mt-6 text-sm text-slate-500">Список заявок, карточки и смена статусов — в следующем обновлении.</p>
+        </main>
       ) : (
         <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <h1 className="text-2xl font-semibold tracking-tight">Добро пожаловать, {me.user.name}</h1>
-          <p className="mt-3 max-w-xl leading-7 text-slate-600">Вы вошли в {me.tenant.displayName}. Разделы заявок и модулей появятся на следующих этапах.</p>
+          <p className="mt-3 max-w-xl leading-7 text-slate-600">Вы вошли в {me.tenant.displayName}.</p>
+          {modules.includes('leads') && <section className="mt-8"><h2 className="mb-3 text-lg font-semibold">Заявки</h2><LeadsSummary /></section>}
+          {modules.length === 0 && <p className="mt-6 text-sm text-slate-500">Для вашей компании пока не включены разделы. Обратитесь к администратору платформы.</p>}
         </main>
       )}
     </div>
