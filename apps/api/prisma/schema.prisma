@@ -400,7 +400,7 @@ model LeadStatusHistory {
   createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  lead      Lead        @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Restrict)
+  lead      Lead        @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Cascade)
   changedBy Membership? @relation(fields: [tenantId, changedById], references: [tenantId, userId], onDelete: Restrict)
 
   @@index([tenantId, leadId, createdAt])

@@ -30,6 +30,8 @@ export class Browser {
     if (json !== undefined) { payload = JSON.stringify(json); hdrs['content-type'] = 'application/json'; }
     if (form !== undefined) { payload = new URLSearchParams(form).toString(); hdrs['content-type'] = 'application/x-www-form-urlencoded'; }
     if (o) hdrs.Origin = o;
+    // Как браузер: длина тела всегда указана (для DELETE Node иначе отправит тело без длины и без chunked).
+    if (payload !== undefined) hdrs['content-length'] = String(Buffer.byteLength(payload));
     const cookie = noCookies ? '' : this.cookieHeader(h);
     if (cookie) hdrs.Cookie = cookie;
     return new Promise((resolve, reject) => {

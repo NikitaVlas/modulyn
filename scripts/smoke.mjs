@@ -24,6 +24,10 @@ const cookiesOf = res => (res.headers['set-cookie'] ?? []).map(c => c.split(';')
 const page = await request('/');
 assert.equal(page.status, 200);
 assert.match(page.body, /MODULYN/);
+// Phase 9.2: страницы интерфейса нельзя встроить в чужой сайт (clickjacking).
+assert.equal(page.headers['x-frame-options'], 'DENY', 'page frame protection');
+assert.match(page.headers['content-security-policy'] ?? '', /frame-ancestors 'none'/);
+assert.equal(page.headers['x-content-type-options'], 'nosniff');
 const live = await request('/api/health');
 assert.equal(live.status, 200);
 assert.deepEqual(JSON.parse(live.body), { status: 'ok', service: 'modulyn-api' });
@@ -106,4 +110,4 @@ const found = await request('/api/leads?q=Smoke%20Website', 'nova.localhost' + p
 assert.equal(JSON.parse(found.body).total, 1, 'website lead visible in Nova');
 await request('/api/auth/logout', 'nova.localhost' + port, { method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/json', Cookie: novaCookies }, body: '{}' });
 assert.equal((await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'logout revokes');
-console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), website form intake (Nova request, duplicate, other company), logout');
+console.log('PASS: page (+ frame protection headers), liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), website form intake (Nova request, duplicate, other company), logout');

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, ConflictException, Controller, Get, HttpCode, NotFoundException, Param, Post, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put, Query } from '@nestjs/common';
 import type {
   LeadAssignee, LeadDetail, LeadListItem, LeadListResponse, LeadsSummaryResponse,
 } from '@modulyn/contracts';
@@ -143,5 +143,13 @@ export class LeadsController {
     const result = await this.leads.assign(id, userId, me.userId);
     if (result === 'not-found') throw new NotFoundException();
     if (result === 'bad-assignee') throw new BadRequestException('Назначить можно только активного сотрудника компании');
+  }
+
+  /** Удаление заявки (Phase 9, F6) — только администратор компании; необратимо. */
+  @Roles('TENANT_ADMIN')
+  @Delete(':id') @HttpCode(204)
+  async remove(@Param('id') id: string, @CurrentTenantUser() me: TenantPrincipal): Promise<void> {
+    if (!UUID.test(id)) throw new NotFoundException();
+    if ((await this.leads.remove(id, me.userId)) === 'not-found') throw new NotFoundException();
   }
 }

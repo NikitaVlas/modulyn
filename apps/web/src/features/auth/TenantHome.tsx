@@ -18,12 +18,14 @@ const ROLE: Record<string, string> = { TENANT_ADMIN: 'Администратор
  * Каркас CRM компании (3.7): шапка с названием компании, пользователь, переключатель компаний, выход.
  * Нет сессии этой компании — переход через центральный вход (/api/auth/handoff/start).
  */
-export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {}, leadId }: {
+export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {}, leadId, leadDeleted = false }: {
   baseDomain: string; error?: string | undefined;
   section?: 'home' | 'users' | 'leads' | 'lead' | 'lead-new' | 'forms';
   /** Фильтры списка заявок из адреса страницы (7.5). */
   leadsQuery?: LeadsQuery;
   leadId?: string;
+  /** Переход после удаления заявки — показать подтверждение над списком. */
+  leadDeleted?: boolean;
 }) {
   const [me, setMe] = useState<TenantMeResponse | null>(null);
   const [modules, setModules] = useState<ModuleKey[]>([]);
@@ -98,6 +100,7 @@ export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {
       ) : section === 'leads' ||section === 'lead' || section === 'lead-new' ? (
         // Сервер сам ответит MODULE_DISABLED, если модуль отключён, — разделы покажут сообщение.
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          {section === 'leads' && leadDeleted && <div className="mb-4"><Notice tone="info">Заявка удалена.</Notice></div>}
           {section === 'leads' && <LeadsList query={leadsQuery} />}
           {section === 'lead' && leadId && <LeadCard id={leadId} role={me.role} />}
           {section === 'lead-new' && <NewLead />}

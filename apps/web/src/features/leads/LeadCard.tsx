@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import type { LeadAssignee, LeadDetail, LeadStatus, TenantRole } from '@modulyn/contracts';
 import { Button, Notice } from '../../components/ui';
 import { ApiError, api, post } from '../auth/api';
@@ -21,6 +22,7 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
   const [missing, setMissing] = useState(false);
+  const router = useRouter();
 
   const load = useCallback(() => api<LeadDetail>(`/api/leads/${id}`).then(l => { setLead(l); setStatus(l.status); }, e => {
     if (e instanceof ApiError && e.status === 404) setMissing(true);
@@ -36,6 +38,20 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
     try { await action(); setMessage({ tone: 'info', text: done }); }
     catch (e) { setMessage({ tone: 'error', text: e instanceof ApiError ? e.message : 'Не удалось выполнить действие' }); }
     finally { setBusy(false); await load(); }
+  }
+
+  /** Удаление (Phase 9, F6): только администратор; необратимо — вернуть можно лишь из резервной копии. */
+  async function remove() {
+    if (!lead || !window.confirm(`Удалить заявку «${lead.name}» безвозвратно? Восстановить её можно будет только из резервной копии базы.`)) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      await api(`/api/leads/${id}`, { method: 'DELETE', body: '{}' });
+      router.push('/leads?deleted=1');
+    } catch (e) {
+      setMessage({ tone: 'error', text: e instanceof ApiError ? e.message : 'Не удалось удалить заявку' });
+      setBusy(false);
+    }
   }
 
   if (missing) {
@@ -97,6 +113,13 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
             </select>
           ) : <p>{lead.assignee?.name ?? 'Не назначен'}</p>}
         </div>
+        {role === 'TENANT_ADMIN' && (
+          <div className="rounded-lg border border-red-200 bg-white p-5 text-sm">
+            <p className="font-medium">Удалить заявку</p>
+            <p className="mt-1 text-slate-600">Например, по запросу человека об удалении его данных. Заявка и её история удаляются безвозвратно.</p>
+            <button disabled={busy} onClick={() => void remove()} className="mt-3 w-full rounded-md border border-red-300 px-4 py-2 font-medium text-red-700 hover:bg-red-50">Удалить заявку</button>
+          </div>
+        )}
       </aside>
     </div>
   );

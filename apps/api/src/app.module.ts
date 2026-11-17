@@ -10,6 +10,7 @@ import { ThrottleService } from './auth/throttle.service.js';
 import { TokensService } from './auth/tokens.service.js';
 import { AuthStore } from './database/auth-store.service.js';
 import { DatabaseService } from './database/database.service.js';
+import { MaintenanceService } from './database/maintenance.service.js';
 import { TenantDb } from './database/tenant-db.service.js';
 import { TenantDirectory } from './database/tenant-directory.service.js';
 import { PlatformStore } from './database/platform-store.service.js';
@@ -35,7 +36,7 @@ import { TenantController } from './tenancy/tenant.controller.js';
   controllers: [HealthController, TenantController, CapabilitiesController, AuthController, InvitationsController, MembersController, PlatformTenantsController, LeadsController, FormEndpointsController, IntakeController],
   providers: [
     DatabaseService, TenantDb, TenantDirectory, TenancyMiddleware, PlatformStore, MembersStore, MailService, InvitationsService,
-    ModulesStore, LeadsStore, ModulesCatalogCheck, FormsStore,
+    ModulesStore, LeadsStore, ModulesCatalogCheck, FormsStore, MaintenanceService,
     AuthStore, PasswordService, TokensService, SessionsService, ThrottleService, GoogleService, OriginMiddleware,
     // Все маршруты по умолчанию требуют входа; открытые помечены @Public() (подшаг 3.5).
     { provide: APP_GUARD, useClass: AuthGuard },

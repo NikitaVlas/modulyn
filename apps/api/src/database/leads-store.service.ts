@@ -154,6 +154,24 @@ export class LeadsStore {
     });
   }
 
+  /**
+   * Удаление заявки по запросу человека (Phase 9, F6). Одной транзакцией: ссылка в журнале приёма обнуляется,
+   * заявка удаляется, история — вместе с ней (каскад). В аудите — только id и источник, без имени и контактов: удалённые данные
+   * не должны сохраниться в другом месте. Чужая и несуществующая заявка — not-found (RLS).
+   */
+  async remove(id: string, actorUserId: string): Promise<'ok' | 'not-found'> {
+    return this.tenantDb.run(async tx => {
+      const lead = await tx.lead.findUnique({ where: { id }, select: { tenantId: true, source: true } });
+      if (!lead) return 'not-found';
+      await tx.formSubmission.updateMany({ where: { leadId: id }, data: { leadId: null } });
+      await tx.lead.delete({ where: { id } }); // история — каскадом внешнего ключа (прямого DELETE истории у роли нет)
+      await tx.tenantAuditLog.create({
+        data: { tenantId: lead.tenantId, actorUserId, action: 'lead.deleted', entityType: 'lead', entityId: id, metadata: { source: lead.source } },
+      });
+      return 'ok';
+    });
+  }
+
   /** Активные участники компании — для фильтра «ответственный» и выбора при назначении. */
   async assignees(): Promise<{ userId: string; name: string; role: TenantRole }[]> {
     const rows = await this.tenantDb.run(tx => tx.membership.findMany({

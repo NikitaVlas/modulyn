@@ -4,6 +4,9 @@
 //   pnpm db:setup   — roles + migrate
 //   pnpm db:seed    — синтетические компании nova, company-b, suspended-co (не для production)
 //   pnpm db:drift   — сравнить живую БД со schema.prisma (Prisma; CHECK/RLS/GRANT Prisma не отслеживает)
+//   pnpm db:backup  — резервная копия в backups/ (pg_dump в контейнере db)
+//   pnpm db:restore-check <файл> — восстановить копию в отдельную базу и сверить
+//   pnpm db:cleanup — удалить устаревшие технические записи (сессии, журналы — по срокам F5)
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { loadEnvFile } from 'node:process';
@@ -32,6 +35,11 @@ const steps = {
   setup: () => { steps.roles(); steps.migrate(); },
   seed: () => { build(); run(['apps/api/scripts/seed.mjs']); },
   drift: () => run([prismaCli, 'migrate', 'diff', '--from-config-datasource', '--to-schema', 'prisma/schema.prisma', '--exit-code'], api),
+  // Резервная копия и проверка восстановления (Phase 9.4): pnpm db:backup, pnpm db:restore-check backups/<файл>.dump
+  backup: () => run(['apps/api/scripts/backup.mjs', 'backup']),
+  // Очистка устаревших технических записей вручную (Phase 9.5); API делает это само раз в час.
+  cleanup: () => run(['apps/api/scripts/cleanup.mjs']),
+  'restore-check': () => run(['apps/api/scripts/backup.mjs', 'restore-check', ...process.argv.slice(3)]),
   // Администраторы платформы (Phase 4.1): pnpm platform:admin create --email ... --name ...
   'platform-admin': () => { build(); run(['apps/api/scripts/platform-admin.mjs', ...process.argv.slice(3)]); },
 };

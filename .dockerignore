@@ -7,3 +7,4 @@
 !.env.example
 *.log
 apps/api/src/generated
+backups

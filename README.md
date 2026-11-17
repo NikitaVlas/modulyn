@@ -1,6 +1,6 @@
 # Modulyn
 
-Модульная multi-tenant CRM. Выполнены Phase 1 (технический каркас), Phase 2 (изоляция компаний: модель данных, миграции, определение компании по поддомену, tenant context, PostgreSQL RLS), Phase 3 (вход по паролю и через Google, выбор и переключение компании, сессии, роли, CSRF, ограничение входа), Phase 4 (администрирование платформы: создание и отключение компаний, второй фактор для администраторов), Phase 5 (сотрудники компании: приглашения по email, роли, отключение доступа, восстановление пароля), Phase 6 (модули компаний: включение платформой, защита API, меню), Phase 7 (заявки: список с фильтрами, карточка, статусы с историей, назначение, ручные заявки) и Phase 8 (приём заявок с сайтов любой технологии: точки приёма, защита от дублей, журнал). Планы: [Phase 4](specs/phase4_design.md), [Phase 5](specs/phase5_design.md), [Phase 6](specs/phase6_design.md), [Phase 7](specs/phase7_design.md), [Phase 8](specs/phase8_design.md). Источник плана, разрешений и статусов: [SPEC.md](SPEC.md); модель данных: [specs/phase2_design.md](specs/phase2_design.md); вход и сессии: [specs/phase3_design.md](specs/phase3_design.md).
+Модульная multi-tenant CRM. Выполнены Phase 1 (технический каркас), Phase 2 (изоляция компаний: модель данных, миграции, определение компании по поддомену, tenant context, PostgreSQL RLS), Phase 3 (вход по паролю и через Google, выбор и переключение компании, сессии, роли, CSRF, ограничение входа), Phase 4 (администрирование платформы: создание и отключение компаний, второй фактор для администраторов), Phase 5 (сотрудники компании: приглашения по email, роли, отключение доступа, восстановление пароля), Phase 6 (модули компаний: включение платформой, защита API, меню), Phase 7 (заявки: список с фильтрами, карточка, статусы с историей, назначение, ручные заявки) Phase 8 (приём заявок с сайтов любой технологии: точки приёма, защита от дублей, журнал) и Phase 9 (сквозная проверка, матрица защиты всех маршрутов, резервное копирование с проверкой восстановления, сроки хранения и удаление заявки, документация) — **MVP готов к приёмке**: [docs/mvp-acceptance.md](docs/mvp-acceptance.md). Эксплуатация: [docs/operations.md](docs/operations.md); план развёртывания: [docs/deployment-plan.md](docs/deployment-plan.md). Планы: [Phase 4](specs/phase4_design.md), [Phase 5](specs/phase5_design.md), [Phase 6](specs/phase6_design.md), [Phase 7](specs/phase7_design.md), [Phase 8](specs/phase8_design.md), [Phase 9](specs/phase9_design.md). Источник плана, разрешений и статусов: [SPEC.md](SPEC.md); модель данных: [specs/phase2_design.md](specs/phase2_design.md); вход и сессии: [specs/phase3_design.md](specs/phase3_design.md).
 
 ## Требования
 
@@ -156,6 +156,11 @@ pnpm dev
 | `pnpm db:setup` | roles + migrate | — |
 | `pnpm db:seed` | синтетические nova, company-b, suspended-co; отказывается при `NODE_ENV=production` | владелец схемы |
 | `pnpm db:drift` | сравнивает живую БД со `schema.prisma`; пустой diff — код 0 | владелец схемы |
+| `pnpm db:backup` | резервная копия в `backups/` (+ сводка для проверки) | суперпользователь, `pg_dump` в контейнере `db` |
+| `pnpm db:restore-check <файл>` | восстанавливает копию в отдельную базу и сверяет; рабочая база не меняется | суперпользователь |
+| `pnpm db:cleanup` | удаляет устаревшие технические записи по срокам хранения (API делает это раз в час) | `modulyn_app` (только вызов функции) |
+
+Копии, восстановление после аварии, ключи, сроки хранения, диагностика — [docs/operations.md](docs/operations.md).
 
 API работает только под `modulyn_app`. Если `DATABASE_URL` указывает на суперпользователя, роль с BYPASSRLS или владельца таблиц, readiness и все операции с данными компаний отвечают 503, а в логе указывается причина. Prisma не отслеживает CHECK-ограничения, RLS-политики и GRANT: они в SQL миграций (`apps/api/prisma/migrations`). Новые миграции создаются командой `prisma migrate dev` в `apps/api`; RLS для новых таблиц с `tenant_id` дописывается в их SQL вручную по образцу `20261116130000_phase2_rls`.
 
@@ -170,7 +175,7 @@ pnpm test:integration
 pnpm smoke
 ```
 
-`pnpm check` выполняет typecheck, lint, unit-тесты и build без базы данных. `pnpm test:integration` требует запущенный PostgreSQL (`pnpm infra:up`): пересоздаёт отдельную базу `<POSTGRES_DB>_test`, создаёт роли, применяет миграции и seed, затем проверяет изоляцию компаний под ролью `modulyn_app` (чтение, изменение, удаление, IDOR, RLS без контекста, пул соединений, конкурентные запросы, менеджер в двух компаниях) и вход (пароль, переход в компанию, ротация и отзыв сессий, границы tenant/app/platform, CSRF, ограничение входа, Google через локальный поддельный OIDC-провайдер). Рабочая база не затрагивается. Smoke требует запущенный стек и `pnpm db:seed`.
+`pnpm check` выполняет typecheck, lint, unit-тесты и build без базы данных. `pnpm test:integration` требует запущенный PostgreSQL (`pnpm infra:up`): пересоздаёт отдельную базу `<POSTGRES_DB>_test`, создаёт роли, применяет миграции и seed, затем проверяет изоляцию компаний под ролью `modulyn_app` (чтение, изменение, удаление, IDOR, RLS без контекста, пул соединений, конкурентные запросы, менеджер в двух компаниях) и вход (пароль, переход в компанию, ротация и отзыв сессий, границы tenant/app/platform, CSRF, ограничение входа, Google через локальный поддельный OIDC-провайдер), а также (Phase 9) сквозной сценарий от новой компании до обработанной заявки с сайта (`e2e.test.mjs`), матрицу всех маршрутов API — без входа, с чужой компанией, с ролью ниже, при отключённом модуле, с чужим Origin (`security-matrix.test.mjs`; новый маршрут без защиты или новый публичный маршрут уронит тест), очистку и удаление заявки (`retention.test.mjs`). Рабочая база не затрагивается. Smoke требует запущенный стек и `pnpm db:seed`.
 
 - `/api/health` → 200, `{ "status": "ok", "service": "modulyn-api" }` на любом hostname.
 - `/api/health/ready` → 200, `{ "status": "ready", "database": "up" }`; 503 при недоступной БД или небезопасной роли.
@@ -187,11 +192,12 @@ pnpm smoke
 7. `apps/api/src/database/database.service.ts` — PrismaClient и проверка runtime-роли; `tenant-db.service.ts` — транзакция компании с `set_config('app.tenant_id', …, true)`; `tenant-directory.service.ts` — поиск активной компании.
 8. `apps/api/test/integration/isolation.test.mjs` — доказательства изоляции.
 9. Вход (Phase 3): `apps/api/src/auth/auth.guard.ts` — глобальная проверка каждого запроса; `sessions.service.ts` — выдача, проверка и ротация сессий; `auth.controller.ts` — маршруты входа и перехода в компанию; `origin.middleware.ts` — CSRF; `src/database/auth-store.service.ts` — единственный доступ к аккаунтам и сессиям; `apps/web/src/features/auth` — страницы входа, выбора компании и каркас CRM. Тесты: `apps/api/test/integration/auth.test.mjs`.
-9. `docker-compose.yml` и `infra/proxy/default.conf` — сервисы, порядок запуска, маршрутизация.
+10. Приём заявок (Phase 8): `apps/api/src/forms/`. Сроки хранения (Phase 9): миграция `20261117120000_phase9_retention`, `src/database/maintenance.service.ts`.
+11. `docker-compose.yml` и `infra/proxy/default.conf` — сервисы, порядок запуска, маршрутизация.
 
 ## Ограничения
 
-Это локальная основа, не готовый production SaaS. Нет редактирования и удаления заявок; нет удаления точек приёма (только отключение) и CAPTCHA для форм «из браузера»; сайт Nova к CRM ещё не подключён (нужно развёртывание в интернете). Письма в production требуют настроенного почтового сервиса (SMTP, SPF/DKIM/DMARC). Вход через настоящий Google проверяется после создания OAuth-клиента (автотесты используют поддельного провайдера). Production TLS/DNS не настроены. Runtime-образ API содержит build dependencies и Prisma CLI (нужен сервису migrate).
+MVP проверен локально; в интернете не развёрнут (план — [docs/deployment-plan.md](docs/deployment-plan.md)). Нет редактирования заявок (удаление — только администратором, по запросу); нет удаления точек приёма (только отключение) и CAPTCHA для форм «из браузера»; сайт Nova к CRM ещё не подключён (нужно развёртывание в интернете). Письма в production требуют настроенного почтового сервиса (SMTP, SPF/DKIM/DMARC). Вход через настоящий Google проверяется после создания OAuth-клиента (автотесты используют поддельного провайдера). Production TLS/DNS не настроены. Runtime-образ API содержит build dependencies и Prisma CLI (нужен сервису migrate).
 
 ## Работа AI-агентов
 
