@@ -87,6 +87,10 @@ const caps = await request('/api/tenant/capabilities', 'nova.localhost' + port, 
 assert.deepEqual(JSON.parse(caps.body).modules, ['leads']);
 const summary = await request('/api/leads/summary', 'nova.localhost' + port, { headers: { Cookie: novaCookies } });
 assert.equal(summary.status, 200, 'leads module summary');
+// Phase 7: список заявок компании.
+const leadList = await request('/api/leads?pageSize=25', 'nova.localhost' + port, { headers: { Cookie: novaCookies } });
+assert.equal(leadList.status, 200, 'leads list');
+assert.equal(JSON.parse(leadList.body).total, JSON.parse(summary.body).total, 'list and summary agree');
 await request('/api/auth/logout', 'nova.localhost' + port, { method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/json', Cookie: novaCookies }, body: '{}' });
 assert.equal((await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'logout revokes');
-console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module, logout');
+console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), logout');

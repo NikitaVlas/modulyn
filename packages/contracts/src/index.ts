@@ -115,3 +115,36 @@ export interface SetTenantModuleRequest { enabled: boolean }
 
 /** GET /api/leads/summary — заявки компании по статусам (модуль «Заявки»). */
 export interface LeadsSummaryResponse { total: number; byStatus: Record<LeadStatus, number> }
+
+// ───────────── Phase 7: заявки ─────────────
+
+export type LeadSource = 'WEB_FORM' | 'MANUAL';
+export type LeadSort = 'created_desc' | 'created_asc';
+export interface PersonRef { userId: string; name: string }
+
+/** Строка списка (L8): без текста сообщения. */
+export interface LeadListItem {
+  id: string; name: string; email: string | null; phone: string | null;
+  source: LeadSource; sourceDetail: string | null; status: LeadStatus;
+  assignee: PersonRef | null; createdAt: string;
+}
+
+/** GET /api/leads — страница списка (L2). */
+export interface LeadListResponse { items: LeadListItem[]; total: number; page: number; pageSize: number }
+
+export interface LeadHistoryEntry { id: string; previousStatus: LeadStatus | null; newStatus: LeadStatus; changedBy: PersonRef | null; createdAt: string }
+
+/** GET /api/leads/:id — карточка с историей статусов. */
+export interface LeadDetail extends LeadListItem { message: string | null; updatedAt: string; history: LeadHistoryEntry[] }
+
+/** POST /api/leads — ручная заявка (L4): имя и хотя бы один контакт. */
+export interface CreateLeadRequest { name: string; email?: string; phone?: string; message?: string }
+
+/** POST /api/leads/:id/status — from: статус, который видел пользователь (L3). */
+export interface ChangeLeadStatusRequest { from: LeadStatus; to: LeadStatus }
+
+/** PUT /api/leads/:id/assignee — только администратор компании (L5). */
+export interface AssignLeadRequest { userId: string | null }
+
+/** GET /api/leads/assignees — активные участники компании для фильтра и назначения. */
+export interface LeadAssignee { userId: string; name: string; role: TenantRole }

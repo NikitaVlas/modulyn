@@ -4,7 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ModuleKey, TenantCapabilitiesResponse, TenantMeResponse } from '@modulyn/contracts';
 import { Brand, Button, Centered, Loading, Notice } from '../../components/ui';
+import { LeadCard } from '../leads/LeadCard';
+import { LeadsList, type LeadsQuery } from '../leads/LeadsList';
 import { LeadsSummary } from '../leads/LeadsSummary';
+import { NewLead } from '../leads/NewLead';
 import { MembersAdmin } from '../members/MembersAdmin';
 import { ApiError, api, originOf, post } from './api';
 
@@ -14,7 +17,13 @@ const ROLE: Record<string, string> = { TENANT_ADMIN: 'Администратор
  * Каркас CRM компании (3.7): шапка с названием компании, пользователь, переключатель компаний, выход.
  * Нет сессии этой компании — переход через центральный вход (/api/auth/handoff/start).
  */
-export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain: string; error?: string | undefined; section?: 'home' | 'users' | 'leads' }) {
+export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {}, leadId }: {
+  baseDomain: string; error?: string | undefined;
+  section?: 'home' | 'users' | 'leads' | 'lead' | 'lead-new';
+  /** Фильтры списка заявок из адреса страницы (7.5). */
+  leadsQuery?: LeadsQuery;
+  leadId?: string;
+}) {
   const [me, setMe] = useState<TenantMeResponse | null>(null);
   const [modules, setModules] = useState<ModuleKey[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'handoff-error' | 'missing' | 'failed'>(error === 'handoff' ? 'handoff-error' : 'loading');
@@ -66,7 +75,7 @@ export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain
           </div>
           <nav className="flex flex-wrap items-center gap-2 text-sm">
             <Link href="/" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'home' ? 'font-semibold' : ''}`}>Главная</Link>
-            {modules.includes('leads') && <Link href="/leads" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'leads' ? 'font-semibold' : ''}`}>Заявки</Link>}
+            {modules.includes('leads') && <Link href="/leads" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section.startsWith('lead') ? 'font-semibold' : ''}`}>Заявки</Link>}
             {/* Пункт меню только для администратора; доступ к разделу всё равно проверяет сервер (5.5). */}
             {me.role === 'TENANT_ADMIN' && <Link href="/users" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'users' ? 'font-semibold' : ''}`}>Пользователи</Link>}
             <span className="text-slate-600">{me.user.name} · {ROLE[me.role] ?? me.role}</span>
@@ -80,12 +89,12 @@ export function TenantHome({ baseDomain, error, section = 'home' }: { baseDomain
         me.role === 'TENANT_ADMIN'
           ? <MembersAdmin />
           : <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><Notice>Раздел доступен только администратору компании.</Notice></main>
-      ) : section === 'leads' ? (
-        <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-          <h1 className="mb-6 text-2xl font-semibold tracking-tight">Заявки</h1>
-          {/* Сервер сам ответит MODULE_DISABLED, если модуль отключён, — сводка покажет сообщение. */}
-          <LeadsSummary />
-          <p className="mt-6 text-sm text-slate-500">Список заявок, карточки и смена статусов — в следующем обновлении.</p>
+      ) : section === 'leads' || section === 'lead' || section === 'lead-new' ? (
+        // Сервер сам ответит MODULE_DISABLED, если модуль отключён, — разделы покажут сообщение.
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          {section === 'leads' && <LeadsList query={leadsQuery} />}
+          {section === 'lead' && leadId && <LeadCard id={leadId} role={me.role} />}
+          {section === 'lead-new' && <NewLead />}
         </main>
       ) : (
         <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
