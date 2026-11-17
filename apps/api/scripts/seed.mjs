@@ -4,12 +4,25 @@
 // Phase 3: у синтетических пользователей и администратора платформы один локальный пароль SEED_PASSWORD;
 // admin@suspended.example состоит только в отключённой компании (список компаний у него пуст).
 // Запуск: pnpm db:seed (под владельцем схемы, MIGRATION_DATABASE_URL). Повторный запуск ничего не дублирует.
+import { createHash } from 'node:crypto';
 import { Algorithm, hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../dist/generated/prisma/client.js';
 
 /** Только для локальной разработки и тестов; seed отказывается работать в production. */
 export const SEED_PASSWORD = 'modulyn-local-dev-password';
+
+/**
+ * Phase 8: точка приёма Nova для локальной проверки — настроена так же, как для живого сайта
+ * (форма пробной тренировки, режим SERVER, «Программа» в сообщении). Секрет только локальный.
+ */
+export const SEED_INTAKE = {
+  publicKey: 'nova-local-trial-endpoint',
+  secret: 'mdl_local-nova-trial-secret-for-development',
+  name: 'Сайт bjjmoenchengladbach.de (локально)',
+  sourceDetail: 'trial',
+  fieldMapping: { extra: [{ field: 'program', label: 'Программа' }] },
+};
 
 export const SEED = {
   tenants: [
@@ -84,6 +97,16 @@ export async function seed(prisma) {
         await tx.membership.upsert({
           where: { tenantId_userId: { tenantId, userId } }, update: {},
           create: { tenantId, userId, role: m.role },
+        });
+      }
+      if (slug === 'nova') {
+        const secretHash = createHash('sha256').update(SEED_INTAKE.secret).digest('hex');
+        await tx.formEndpoint.upsert({
+          where: { publicKey: SEED_INTAKE.publicKey }, update: {},
+          create: {
+            tenantId, mode: 'SERVER', publicKey: SEED_INTAKE.publicKey, name: SEED_INTAKE.name, sourceDetail: SEED_INTAKE.sourceDetail,
+            fieldMapping: SEED_INTAKE.fieldMapping, secretHash, secretPrefix: SEED_INTAKE.secret.slice(0, 10), allowedOrigins: [],
+          },
         });
       }
       if (await tx.lead.count() > 0) return; // уже засеяно

@@ -44,6 +44,17 @@ enum LeadStatus {
   CLOSED
 }
 
+enum FormEndpointMode {
+  SERVER
+  BROWSER
+}
+
+enum FormSubmissionStatus {
+  IMPORTED
+  DUPLICATE
+  REJECTED
+}
+
 enum LeadSource {
   WEB_FORM
   MANUAL
@@ -69,6 +80,8 @@ model Tenant {
   sessions          TenantSession[]
   loginHandoffs     LoginHandoff[]
   invitations       Invitation[]
+  formEndpoints     FormEndpoint[]
+  formSubmissions   FormSubmission[]
 
   @@map("tenants")
 }
@@ -366,8 +379,9 @@ model Lead {
 
   tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   // Назначение снимается записью assignedToId = null, не disconnect (иначе Prisma обнулит и tenantId).
-  assignee      Membership?         @relation("LeadAssignee", fields: [tenantId, assignedToId], references: [tenantId, userId], onDelete: Restrict)
-  statusHistory LeadStatusHistory[]
+  assignee        Membership?         @relation("LeadAssignee", fields: [tenantId, assignedToId], references: [tenantId, userId], onDelete: Restrict)
+  statusHistory   LeadStatusHistory[]
+  formSubmissions FormSubmission[]
 
   @@unique([tenantId, id])
   @@index([tenantId, createdAt(sort: Desc)])
@@ -391,6 +405,54 @@ model LeadStatusHistory {
 
   @@index([tenantId, leadId, createdAt])
   @@map("lead_status_history")
+}
+
+/// Точка приёма заявок с сайта компании (Phase 8, D11, W1–W4). Не зависит от технологии и хостинга сайта.
+/// SERVER: сайт отправляет со своего сервера с секретом (в БД только хеш).
+/// BROWSER: отправляет браузер посетителя; публичный ключ + разрешённые адреса сайта + лимиты + ловушка для ботов.
+model FormEndpoint {
+  id             String           @id @default(uuid(7)) @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  name           String           @db.VarChar(100)
+  mode           FormEndpointMode
+  publicKey      String           @unique @map("public_key") @db.VarChar(64)
+  secretPrefix   String?          @map("secret_prefix") @db.VarChar(12)
+  secretHash     String?          @map("secret_hash") @db.VarChar(128)
+  allowedOrigins String[]         @map("allowed_origins")
+  /// Тип заявки (Lead.sourceDetail), например "trial".
+  sourceDetail   String?          @map("source_detail") @db.VarChar(100)
+  /// W4: { fields: { name?, firstName?, lastName?, email?, phone?, message? }, extra: [{ field, label }] }
+  fieldMapping   Json?            @map("field_mapping") @db.JsonB
+  isActive       Boolean          @default(true) @map("is_active")
+  lastUsedAt     DateTime?        @map("last_used_at") @db.Timestamptz(3)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  submissions FormSubmission[]
+
+  @@unique([tenantId, id])
+  @@map("form_endpoints")
+}
+
+/// Журнал приёма (W7): результат и причина. Содержимое формы здесь не хранится — только в созданной заявке.
+model FormSubmission {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  tenantId       String               @map("tenant_id") @db.Uuid
+  endpointId     String               @map("endpoint_id") @db.Uuid
+  idempotencyKey String               @map("idempotency_key") @db.VarChar(160)
+  status         FormSubmissionStatus
+  errorCode      String?              @map("error_code") @db.VarChar(100)
+  leadId         String?              @map("lead_id") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  endpoint FormEndpoint @relation(fields: [tenantId, endpointId], references: [tenantId, id], onDelete: Restrict)
+  lead     Lead?        @relation(fields: [tenantId, leadId], references: [tenantId, id], onDelete: Restrict)
+
+  @@index([tenantId, endpointId, idempotencyKey])
+  @@index([tenantId, createdAt])
+  @@map("form_submissions")
 }
 
 model TenantAuditLog {

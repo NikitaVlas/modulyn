@@ -8,6 +8,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export const HANDOFF_COMPLETE_PATH = '/api/auth/handoff/complete';
 /** Второй шаг перехода: та же форма, но уже со своего origin — чтобы браузер приложил cookie state. */
 export const HANDOFF_FINISH_PATH = '/api/auth/handoff/finish';
+/** Приём заявок с сайтов компаний (Phase 8) — своя проверка отправителя, CSRF к нему неприменим. */
+export const WEBHOOK_PATH_PREFIX = '/api/webhooks/forms/';
 
 /**
  * CSRF-защита изменяющих запросов (A7, подшаг 3.6).
@@ -25,6 +27,9 @@ export class OriginMiddleware {
     if (SAFE_METHODS.has(req.method)) { next(); return; }
     const context = currentRequestContext();
     if (!context?.host) { next(); return; } // health-маршруты без контекста только читают
+    // Приём заявок с внешних сайтов (Phase 8): запросы по определению приходят не со своего хоста и без cookies.
+    // Отправителя проверяет сам приём — секрет (SERVER) или список адресов сайта (BROWSER); сессии там не используются.
+    if (context.kind === 'tenant' && req.path.startsWith(WEBHOOK_PATH_PREFIX)) { next(); return; }
     const origin = req.headers.origin;
     const type = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
     const handoff = req.path === HANDOFF_COMPLETE_PATH && context.kind === 'tenant';

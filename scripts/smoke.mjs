@@ -91,6 +91,19 @@ assert.equal(summary.status, 200, 'leads module summary');
 const leadList = await request('/api/leads?pageSize=25', 'nova.localhost' + port, { headers: { Cookie: novaCookies } });
 assert.equal(leadList.status, 200, 'leads list');
 assert.equal(JSON.parse(leadList.body).total, JSON.parse(summary.body).total, 'list and summary agree');
+// Phase 8: заявка ровно в формате сайта Nova (api/trial-crm.php) на локальную точку приёма из seed (SEED_INTAKE).
+// Ключ submissionId фиксирован: первый запуск создаёт заявку «Smoke Website», повторная отправка — всегда дубль.
+const intakePath = '/api/webhooks/forms/nova-local-trial-endpoint';
+const novaLead = {
+  method: 'POST', headers: { 'content-type': 'application/json', 'X-CRM-Integration-Key': 'mdl_local-nova-trial-secret-for-development' },
+  body: JSON.stringify({ submissionId: 'smoke-phase8-nova-trial-0001', firstName: 'Smoke', lastName: 'Website', email: 'smoke@nova-visitor.example', phone: '', program: 'Erwachsene', message: 'Smoke check' }),
+};
+const firstIntake = await request(intakePath, 'nova.localhost' + port, novaLead);
+assert.equal(firstIntake.status, 202, 'website lead accepted');
+assert.deepEqual(JSON.parse((await request(intakePath, 'nova.localhost' + port, novaLead)).body), { ok: true, duplicate: true }, 'resend is a duplicate');
+assert.equal((await request(intakePath, 'company-b.localhost' + port, novaLead)).status, 404, 'Nova endpoint unknown on Company B');
+const found = await request('/api/leads?q=Smoke%20Website', 'nova.localhost' + port, { headers: { Cookie: novaCookies } });
+assert.equal(JSON.parse(found.body).total, 1, 'website lead visible in Nova');
 await request('/api/auth/logout', 'nova.localhost' + port, { method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/json', Cookie: novaCookies }, body: '{}' });
 assert.equal((await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'logout revokes');
-console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), logout');
+console.log('PASS: page, liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), website form intake (Nova request, duplicate, other company), logout');

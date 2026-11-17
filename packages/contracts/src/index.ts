@@ -148,3 +148,38 @@ export interface AssignLeadRequest { userId: string | null }
 
 /** GET /api/leads/assignees — активные участники компании для фильтра и назначения. */
 export interface LeadAssignee { userId: string; name: string; role: TenantRole }
+
+// ───────────── Phase 8: приём заявок с сайтов ─────────────
+
+export type FormEndpointMode = 'SERVER' | 'BROWSER';
+export type FormSubmissionStatus = 'IMPORTED' | 'DUPLICATE' | 'REJECTED';
+
+/** W4: переименования полей формы и дополнительные поля, добавляемые в сообщение. */
+export interface FormFieldMapping {
+  fields?: Partial<Record<'name' | 'firstName' | 'lastName' | 'email' | 'phone' | 'message', string>>;
+  extra?: { field: string; label: string }[];
+}
+
+/** Точка приёма в разделе «Приём заявок». Секрета нет — он показывается один раз. */
+export interface FormEndpointInfo {
+  id: string; name: string; mode: FormEndpointMode; publicKey: string; intakeUrl: string;
+  secretPrefix: string | null; allowedOrigins: string[]; sourceDetail: string | null;
+  fieldMapping: FormFieldMapping | null; isActive: boolean; lastUsedAt: string | null; createdAt: string;
+}
+
+export interface CreateFormEndpointRequest {
+  name: string; mode: FormEndpointMode; sourceDetail?: string | null;
+  allowedOrigins?: string[]; fieldMapping?: FormFieldMapping | null;
+}
+export interface UpdateFormEndpointRequest {
+  name?: string; sourceDetail?: string | null; allowedOrigins?: string[]; fieldMapping?: FormFieldMapping | null; isActive?: boolean;
+}
+/** Ответ на создание SERVER-точки и перевыпуск секрета: secret показывается только здесь. */
+export interface FormEndpointCreatedResponse { endpoint: FormEndpointInfo; secret: string | null }
+export interface FormSecretResponse { secret: string }
+
+/** Запись журнала приёма (W7): без содержимого формы. */
+export interface FormSubmissionEntry {
+  id: string; endpointId: string; endpointName: string; status: FormSubmissionStatus;
+  errorCode: string | null; leadId: string | null; createdAt: string;
+}

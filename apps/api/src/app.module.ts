@@ -17,6 +17,9 @@ import { MembersStore } from './database/members-store.service.js';
 import { ModulesStore } from './database/modules-store.service.js';
 import { LeadsStore } from './database/leads-store.service.js';
 import { LeadsController } from './leads/leads.controller.js';
+import { FormsStore } from './database/forms-store.service.js';
+import { FormEndpointsController } from './forms/form-endpoints.controller.js';
+import { IntakeController } from './forms/intake.controller.js';
 import { CapabilitiesController } from './modules/capabilities.controller.js';
 import { ModulesCatalogCheck } from './modules/modules-catalog.check.js';
 import { HealthController } from './health/health.controller.js';
@@ -29,10 +32,10 @@ import { TenancyMiddleware } from './tenancy/tenancy.middleware.js';
 import { TenantController } from './tenancy/tenant.controller.js';
 
 @Module({
-  controllers: [HealthController, TenantController, CapabilitiesController, AuthController, InvitationsController, MembersController, PlatformTenantsController, LeadsController],
+  controllers: [HealthController, TenantController, CapabilitiesController, AuthController, InvitationsController, MembersController, PlatformTenantsController, LeadsController, FormEndpointsController, IntakeController],
   providers: [
     DatabaseService, TenantDb, TenantDirectory, TenancyMiddleware, PlatformStore, MembersStore, MailService, InvitationsService,
-    ModulesStore, LeadsStore, ModulesCatalogCheck,
+    ModulesStore, LeadsStore, ModulesCatalogCheck, FormsStore,
     AuthStore, PasswordService, TokensService, SessionsService, ThrottleService, GoogleService, OriginMiddleware,
     // Все маршруты по умолчанию требуют входа; открытые помечены @Public() (подшаг 3.5).
     { provide: APP_GUARD, useClass: AuthGuard },

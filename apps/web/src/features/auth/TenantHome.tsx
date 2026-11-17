@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ModuleKey, TenantCapabilitiesResponse, TenantMeResponse } from '@modulyn/contracts';
 import { Brand, Button, Centered, Loading, Notice } from '../../components/ui';
+import { FormsAdmin } from '../forms/FormsAdmin';
 import { LeadCard } from '../leads/LeadCard';
 import { LeadsList, type LeadsQuery } from '../leads/LeadsList';
 import { LeadsSummary } from '../leads/LeadsSummary';
@@ -19,7 +20,7 @@ const ROLE: Record<string, string> = { TENANT_ADMIN: 'Администратор
  */
 export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {}, leadId }: {
   baseDomain: string; error?: string | undefined;
-  section?: 'home' | 'users' | 'leads' | 'lead' | 'lead-new';
+  section?: 'home' | 'users' | 'leads' | 'lead' | 'lead-new' | 'forms';
   /** Фильтры списка заявок из адреса страницы (7.5). */
   leadsQuery?: LeadsQuery;
   leadId?: string;
@@ -77,7 +78,8 @@ export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {
             <Link href="/" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'home' ? 'font-semibold' : ''}`}>Главная</Link>
             {modules.includes('leads') && <Link href="/leads" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section.startsWith('lead') ? 'font-semibold' : ''}`}>Заявки</Link>}
             {/* Пункт меню только для администратора; доступ к разделу всё равно проверяет сервер (5.5). */}
-            {me.role === 'TENANT_ADMIN' && <Link href="/users" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'users' ? 'font-semibold' : ''}`}>Пользователи</Link>}
+            {me.role === 'TENANT_ADMIN' && modules.includes('leads') && <Link href="/forms" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'forms' ? 'font-semibold' : ''}`}>Приём заявок</Link>}
+            {me.role === 'TENANT_ADMIN' && <Link href="/users"className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'users' ? 'font-semibold' : ''}`}>Пользователи</Link>}
             <span className="text-slate-600">{me.user.name} · {ROLE[me.role] ?? me.role}</span>
             <a href={originOf('app', baseDomain) + '/?choose=1'} className="rounded-md px-3 py-1.5 hover:bg-slate-100">Сменить компанию</a>
             <a href="/password" className="rounded-md px-3 py-1.5 hover:bg-slate-100">Пароль</a>
@@ -89,7 +91,11 @@ export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {
         me.role === 'TENANT_ADMIN'
           ? <MembersAdmin />
           : <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><Notice>Раздел доступен только администратору компании.</Notice></main>
-      ) : section === 'leads' || section === 'lead' || section === 'lead-new' ? (
+      ) : section === 'forms' ? (
+        me.role === 'TENANT_ADMIN'
+          ? <FormsAdmin />
+          : <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6"><Notice>Раздел доступен только администратору компании.</Notice></main>
+      ) : section === 'leads' ||section === 'lead' || section === 'lead-new' ? (
         // Сервер сам ответит MODULE_DISABLED, если модуль отключён, — разделы покажут сообщение.
         <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
           {section === 'leads' && <LeadsList query={leadsQuery} />}
