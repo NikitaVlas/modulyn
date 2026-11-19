@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import {
-  BadRequestException, Body, ConflictException, Controller, Get, HttpCode, HttpException, NotFoundException, Post, Query, Req, Res,
+  BadRequestException, Body, ConflictException, Controller, Get, HttpCode, HttpException, NotFoundException, Post, Put, Query, Req, Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
@@ -8,7 +8,9 @@ import type {
   AppMeResponse, AuthProvidersResponse, LoginResponse, MfaEnableResponse, MfaSetupResponse, PlatformMeResponse,
   TenantInfoResponse, TenantMeResponse,
 } from '@modulyn/contracts';
+import { isLocale } from '@modulyn/i18n';
 import { originFor, parseEnvironment } from '../config/environment.js';
+import { requestLocale, t } from '../i18n.js';
 import { AuthStore, type LoginAdmin } from '../database/auth-store.service.js';
 import { MembersStore } from '../database/members-store.service.js';
 import { MailService } from '../mail/mail.service.js';
@@ -25,7 +27,6 @@ import { SessionsService } from './sessions.service.js';
 import { ThrottleService } from './throttle.service.js';
 import { TokensService, safeEqual } from './tokens.service.js';
 
-const INVALID_CREDENTIALS = 'Неверный email или пароль';
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
 
 function context(): RequestContext {
@@ -36,13 +37,13 @@ function context(): RequestContext {
 
 function text(body: unknown, key: string, max: number): string {
   const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[key] : undefined;
-  if (typeof value !== 'string' || value.length === 0 || value.length > max) throw new BadRequestException(`Поле ${key} заполнено неверно`);
+  if (typeof value !== 'string' || value.length === 0 || value.length > max) throw new BadRequestException(t('err.fieldInvalid', { field: key }));
   return value;
 }
 
 function normalizeEmail(value: string): string {
   const email = value.trim().toLowerCase();
-  if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) throw new UnauthorizedException(INVALID_CREDENTIALS);
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) throw new UnauthorizedException(t('err.invalidCredentials'));
   return email;
 }
 
@@ -107,7 +108,7 @@ export class AuthController {
     if (!account || !valid || !account.isActive || tempExpired) {
       await this.throttle.failed(scope, ctx.ip, email);
       if (ctx.kind === 'platform' && account) await this.store.platformAudit('admin.login_failed', account.id);
-      throw new UnauthorizedException(INVALID_CREDENTIALS);
+      throw new UnauthorizedException(t('err.invalidCredentials'));
     }
     await this.throttle.succeeded(scope, ctx.ip, email);
     if (ctx.kind !== 'platform') {
@@ -133,7 +134,7 @@ export class AuthController {
   async verifyMfa(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ ok: true }> {
     const ctx = context();
     const pending = await this.tokens.verifyState(readCookie(req, 'mfaPending', this.sessions.secure), 'mfa-pending');
-    if (!pending || typeof pending.sub !== 'string') throw new UnauthorizedException('Войдите заново');
+    if (!pending || typeof pending.sub !== 'string') throw new UnauthorizedException({ statusCode: 401, message: t('err.signInAgain'), code: 'MFA_EXPIRED' });
     const adminId = pending.sub;
     const code = text(body, 'code', 32).trim();
     await this.throttle.before(res, 'mfa', ctx.ip, adminId);
@@ -150,7 +151,7 @@ export class AuthController {
     if (!method) {
       await this.throttle.failed('mfa', ctx.ip, adminId);
       await this.store.platformAudit('admin.mfa_failed', adminId);
-      throw new UnauthorizedException('Неверный код');
+      throw new UnauthorizedException({ statusCode: 401, message: t('err.invalidCode'), code: 'MFA_INVALID_CODE' });
     }
     await this.throttle.succeeded('mfa', ctx.ip, adminId);
     clearCookie(res, 'mfaPending', this.sessions.secure);
@@ -165,9 +166,9 @@ export class AuthController {
     const ctx = context();
     if (ctx.kind !== 'platform') throw new NotFoundException();
     const admin = await this.store.findPlatformAdminById(ctx.principal!.adminId);
-    if (!admin || admin.totpEnabledAt) throw new ConflictException('Второй фактор уже настроен');
+    if (!admin || admin.totpEnabledAt) throw new ConflictException(t('err.mfaAlreadySet'));
     const secret = newTotpSecret();
-    if (!(await this.store.setPendingTotp(admin.id, sealSecret(this.env.totpKey, secret)))) throw new ConflictException('Второй фактор уже настроен');
+    if (!(await this.store.setPendingTotp(admin.id, sealSecret(this.env.totpKey, secret)))) throw new ConflictException(t('err.mfaAlreadySet'));
     return { otpauthUri: otpauthUri(secret, admin.email), secret: base32Encode(secret) };
   }
 
@@ -180,15 +181,15 @@ export class AuthController {
     const code = text(body, 'code', 16).trim();
     await this.throttle.before(res, 'mfa', ctx.ip, adminId);
     const admin = await this.store.findPlatformAdminById(adminId);
-    if (!admin || admin.totpEnabledAt || !admin.totpSecretEnc) throw new ConflictException('Сначала начните настройку');
+    if (!admin || admin.totpEnabledAt || !admin.totpSecretEnc) throw new ConflictException(t('err.mfaStartFirst'));
     const step = verifyTotp(openSecret(this.env.totpKey, admin.totpSecretEnc), code, null);
     if (step === null) {
       await this.throttle.failed('mfa', ctx.ip, adminId);
-      throw new BadRequestException('Код не подходит. Проверьте время на телефоне и введите новый код.');
+      throw new BadRequestException(t('err.mfaCodeMismatch'));
     }
     const recoveryCodes = newRecoveryCodes();
     const hashes = recoveryCodes.map(c => this.tokens.hash(normalizeRecoveryCode(c)));
-    if (!(await this.store.enableTotp(adminId, step, hashes))) throw new ConflictException('Второй фактор уже настроен');
+    if (!(await this.store.enableTotp(adminId, step, hashes))) throw new ConflictException(t('err.mfaAlreadySet'));
     await this.throttle.succeeded('mfa', ctx.ip, adminId);
     await this.store.platformAudit('admin.mfa_enabled', adminId);
     return { recoveryCodes };
@@ -244,7 +245,7 @@ export class AuthController {
     if (ctx.kind === 'platform') {
       const admin = await this.store.findPlatformAdminById(ctx.principal!.adminId);
       if (!admin) throw new UnauthorizedException();
-      return { admin: { name: admin.name, email: admin.email }, passwordChangeRequired: admin.passwordChangeRequired, mfaSetupRequired: admin.totpEnabledAt === null };
+      return { admin: { name: admin.name, email: admin.email }, passwordChangeRequired: admin.passwordChangeRequired, mfaSetupRequired: admin.totpEnabledAt === null, locale: admin.locale };
     }
     const user = await this.store.findUserById(ctx.principal!.userId);
     if (!user) throw new UnauthorizedException();
@@ -252,11 +253,24 @@ export class AuthController {
     if (ctx.kind === 'tenant') {
       return {
         user: account, role: ctx.principal!.role, tenant: { slug: ctx.tenant.slug, displayName: ctx.tenant.displayName },
-        passwordChangeRequired: user.passwordChangeRequired,
+        passwordChangeRequired: user.passwordChangeRequired, locale: user.locale,
       };
     }
     // До смены временного пароля список компаний не показывается — переход в них всё равно закрыт.
-    return { user: account, companies: user.passwordChangeRequired ? [] : await this.store.listCompanies(user.id), passwordChangeRequired: user.passwordChangeRequired };
+    return { user: account, companies: user.passwordChangeRequired ? [] : await this.store.listCompanies(user.id), passwordChangeRequired: user.passwordChangeRequired, locale: user.locale };
+  }
+
+  /**
+   * Язык своего аккаунта (Phase 10, I2): во всех трёх контекстах, в том числе до завершения обязательных шагов.
+   * Меняется только своя строка (users или platform_admins); cookie языка ставит сам интерфейс.
+   */
+  @AllowRestricted('password-change', 'mfa-setup') @Put('locale') @HttpCode(204)
+  async setLocale(@Body() body: unknown): Promise<void> {
+    const ctx = context();
+    const locale = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).locale : undefined;
+    if (!isLocale(locale)) throw new BadRequestException(t('err.localeInvalid'));
+    if (ctx.kind === 'platform') await this.store.setPlatformAdminLocale(ctx.principal!.adminId, locale);
+    else await this.store.setUserLocale(ctx.principal!.userId, locale);
   }
 
   /** Смена своего пароля (A10). Остальные сессии отзываются, текущий браузер остаётся в системе. Снимает признак временного пароля (B8). */
@@ -267,7 +281,7 @@ export class AuthController {
     const next = text(body, 'newPassword', PASSWORD_MAX * 4);
     const policy = passwordPolicyError(next);
     if (policy) throw new BadRequestException(policy);
-    if (next === current) throw new BadRequestException('Новый пароль совпадает с текущим');
+    if (next === current) throw new BadRequestException(t('err.passwordSame'));
 
     const ownerId = ctx.kind === 'platform' ? ctx.principal!.adminId : ctx.principal!.userId;
     const account = ctx.kind === 'platform' ? await this.store.findPlatformAdminById(ownerId) : await this.store.findUserById(ownerId);
@@ -275,7 +289,7 @@ export class AuthController {
     await this.throttle.before(res, scope, ctx.ip, ownerId);
     if (!account?.passwordHash || !(await this.passwords.verify(account.passwordHash, current))) {
       await this.throttle.failed(scope, ctx.ip, ownerId);
-      throw new BadRequestException('Текущий пароль указан неверно');
+      throw new BadRequestException(t('err.passwordCurrentWrong'));
     }
     await this.throttle.succeeded(scope, ctx.ip, ownerId);
     const hash = await this.passwords.hash(next);
@@ -350,10 +364,11 @@ export class AuthController {
     // С no-referrer (по умолчанию helmet) браузер отправляет межсайтовую форму с Origin: null, и проверка Origin (A7)
     // её отклоняет. strict-origin передаёт только origin app.<домен> — без пути и параметров.
     res.setHeader('Referrer-Policy', 'strict-origin');
-    res.type('html').send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="referrer" content="strict-origin"><title>Переход в ${escapeHtml(tenant.displayName)}</title></head>
+    const redirecting = escapeHtml(t('page.redirecting', { company: tenant.displayName }));
+    res.type('html').send(`<!doctype html><html lang="${requestLocale()}"><head><meta charset="utf-8"><meta name="referrer" content="strict-origin"><title>${redirecting}</title></head>
 <body style="font-family:Arial,sans-serif;padding:2rem"><form method="post" action="${escapeHtml(action)}">
 <input type="hidden" name="code" value="${escapeHtml(code)}"><input type="hidden" name="state" value="${escapeHtml(state)}">
-<p>Переход в ${escapeHtml(tenant.displayName)}…</p><noscript><button type="submit">Продолжить</button></noscript></form>
+<p>${redirecting}</p><noscript><button type="submit">${escapeHtml(t('common.continue'))}</button></noscript></form>
 <script nonce="${nonce}">document.forms[0].submit()</script></body></html>`);
   }
 
@@ -375,10 +390,10 @@ export class AuthController {
     res.setHeader('Content-Security-Policy',
       `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
     res.setHeader('Referrer-Policy', 'same-origin');
-    res.type('html').send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Вход</title></head>
+    res.type('html').send(`<!doctype html><html lang="${requestLocale()}"><head><meta charset="utf-8"><title>${escapeHtml(t('page.signInTitle'))}</title></head>
 <body style="font-family:Arial,sans-serif;padding:2rem"><form method="post" action="/api/auth/handoff/finish">
 <input type="hidden" name="code" value="${escapeHtml(code)}"><input type="hidden" name="state" value="${escapeHtml(state)}">
-<p>Вход…</p><noscript><button type="submit">Продолжить</button></noscript></form>
+<p>${escapeHtml(t('common.signingIn'))}</p><noscript><button type="submit">${escapeHtml(t('common.continue'))}</button></noscript></form>
 <script nonce="${nonce}">document.forms[0].submit()</script></body></html>`);
   }
 
@@ -470,10 +485,10 @@ export class AuthController {
     const ctx = context();
     const email = (typeof body === 'object' && body !== null && typeof (body as Record<string, unknown>).email === 'string')
       ? ((body as Record<string, unknown>).email as string).trim().toLowerCase() : '';
-    if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) throw new BadRequestException('Укажите корректный email');
+    if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) throw new BadRequestException(t('err.emailInvalid'));
     if (await this.throttle.exceeded(`reset-ip:${ctx.ip ?? 'unknown'}`, 20, 60 * 60_000)) {
       res.setHeader('Retry-After', '3600');
-      throw new HttpException({ statusCode: 429, message: 'Слишком много запросов. Попробуйте позже.' }, 429);
+      throw new HttpException({ statusCode: 429, message: t('err.tooManyRequests') }, 429);
     }
     void this.sendPasswordReset(email).catch(() => undefined);
     return { ok: true };
@@ -485,7 +500,7 @@ export class AuthController {
     if (!user || !user.isActive) return;
     const token = this.tokens.randomToken();
     await this.store.createPasswordReset(user.id, this.tokens.hash(token), new Date(Date.now() + 60 * 60_000));
-    await this.mail.send(passwordResetMail({ to: email, link: `${this.appOrigin}/reset-password#${token}` }));
+    await this.mail.send(passwordResetMail({ to: email, link: `${this.appOrigin}/reset-password#${token}`, locale: user.locale }));
   }
 
   /** Новый пароль по ссылке: одноразово, 1 час; после смены все сессии человека завершаются. */
@@ -494,11 +509,11 @@ export class AuthController {
     const fields = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {};
     const token = fields.token;
     const password = typeof fields.newPassword === 'string' ? fields.newPassword : '';
-    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) throw new BadRequestException('Ссылка недействительна или устарела');
+    if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) throw new BadRequestException(t('err.linkInvalid'));
     const policy = passwordPolicyError(password);
     if (policy) throw new BadRequestException(policy);
     const userId = await this.store.resetPassword(this.tokens.hash(token), await this.passwords.hash(password));
-    if (!userId) throw new BadRequestException('Ссылка недействительна или устарела. Запросите новую.');
+    if (!userId) throw new BadRequestException(t('err.linkInvalidRequestNew'));
     await this.store.revokeAllUserSessions(userId);
     this.sessions.clear(res);
   }

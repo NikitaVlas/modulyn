@@ -22,13 +22,16 @@ export interface CompanyEntry { slug: string; displayName: string; role: TenantR
 export interface LoginResponse { ok: true; mfaRequired?: true }
 
 /** GET /api/auth/me на app.<домен>: аккаунт и только активные участия в активных компаниях. */
-export interface AppMeResponse { user: AccountInfo; companies: CompanyEntry[]; passwordChangeRequired: boolean }
+/** Phase 10: язык интерфейса (немецкий по умолчанию). Совпадает с Locale из @modulyn/i18n. */
+export type UiLocale = 'de' | 'en' | 'ru';
+
+export interface AppMeResponse { user: AccountInfo; companies: CompanyEntry[]; passwordChangeRequired: boolean; locale: UiLocale }
 
 /** GET /api/auth/me на поддомене компании. Роль — актуальная из БД. */
-export interface TenantMeResponse { user: AccountInfo; role: TenantRole; tenant: TenantInfoResponse; passwordChangeRequired: boolean }
+export interface TenantMeResponse { user: AccountInfo; role: TenantRole; tenant: TenantInfoResponse; passwordChangeRequired: boolean; locale: UiLocale }
 
 /** GET /api/auth/me на admin.<домен>. До смены временного пароля и настройки второго фактора доступ ограничен. */
-export interface PlatformMeResponse { admin: AccountInfo; passwordChangeRequired: boolean; mfaSetupRequired: boolean }
+export interface PlatformMeResponse { admin: AccountInfo; passwordChangeRequired: boolean; mfaSetupRequired: boolean; locale: UiLocale }
 
 /** POST /api/auth/mfa/setup — секрет показывается один раз для приложения-аутентификатора. */
 export interface MfaSetupResponse { otpauthUri: string; secret: string }
@@ -75,6 +78,8 @@ export interface UpdateMemberRequest { role?: TenantRole; isActive?: boolean }
 /** POST /api/invitations/inspect — что видит человек по ссылке из письма. */
 export interface InvitationInspectResponse {
   companyName: string; email: string; name: string; role: TenantRole;
+  /** Phase 10 (I4): язык приглашения (пригласившего) — страница открывается на нём. */
+  locale: UiLocale;
   /** used — ссылка уже использована, отозвана или истекла. */
   status: 'open' | 'used';
   /** Есть ли аккаунт с этим email — знает только владелец ссылки (то есть сам приглашённый). */

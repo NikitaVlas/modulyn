@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
+import { LOCALE_COOKIE, toLocale } from '@modulyn/i18n';
+import { parseCookies } from '../auth/cookies.js';
 import { parseEnvironment } from '../config/environment.js';
 import { TenantDirectory } from '../database/tenant-directory.service.js';
 import { resolveHost } from './hostname.js';
@@ -30,7 +32,9 @@ export class TenancyMiddleware {
     if (isHealthPath(req.path)) { next(); return; }
     const host = this.originalHost(req);
     const resolution = resolveHost(host, this.config.appBaseDomain);
-    const meta = { host: (host ?? '').toLowerCase(), ip: this.clientIp(req) };
+    // Язык до входа (Phase 10, I2): cookie, выбранный в переключателе; после входа guard заменит его языком аккаунта.
+    const locale = toLocale(parseCookies(req.headers.cookie).get(LOCALE_COOKIE));
+    const meta = { host: (host ?? '').toLowerCase(), ip: this.clientIp(req), locale };
 
     if (resolution.kind === 'invalid') { notFound(res); return; }
     if (resolution.kind === 'platform' || resolution.kind === 'app') {

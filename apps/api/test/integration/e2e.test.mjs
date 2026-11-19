@@ -100,7 +100,7 @@ test('9.1 the whole MVP path, from a new company to a processed website lead', a
 
   // 5. Приём заявок (Phase 8): администратор создаёт точку для сайта; секрет показан один раз.
   const endpoint = await boss.post('studio', '/api/form-endpoints', {
-    name: 'Website', mode: 'SERVER', sourceDetail: 'trial', fieldMapping: { extra: [{ field: 'program', label: 'Программа' }] },
+    name: 'Website', mode: 'SERVER', sourceDetail: 'trial', fieldMapping: { extra: [{ field: 'program', label: 'Programm' }] },
   });
   assert.equal(endpoint.status, 201);
   const { publicKey, intakeUrl } = endpoint.json.endpoint;
@@ -118,7 +118,7 @@ test('9.1 the whole MVP path, from a new company to a processed website lead', a
   const [item] = fresh.json.items;
   assert.deepEqual([item.name, item.source, item.sourceDetail, item.assignee], ['Mia Website', 'WEB_FORM', 'trial', null]);
   const card = await trainer.get('studio', `/api/leads/${item.id}`);
-  assert.equal(card.json.message, 'Программа: Kinder 7–10\nAb nächster Woche');
+  assert.equal(card.json.message, 'Programm: Kinder 7–10\nAb nächster Woche');
   assert.equal((await trainer.post('studio', `/api/leads/${item.id}/status`, { from: 'NEW', to: 'IN_PROGRESS' })).status, 204);
 
   // Назначает только администратор; после назначения заявка — в «Мои» у менеджера.

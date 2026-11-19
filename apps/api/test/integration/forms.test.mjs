@@ -91,7 +91,7 @@ describe('8.10 / 8.12 the Nova website request, unchanged', () => {
     const [lead] = await leadsNamed('Lena Website');
     assert.deepEqual(
       [lead.email, lead.phone, lead.source, lead.source_detail, lead.status, lead.message],
-      ['anna.probe@example.de', '+49 171 0000000', 'WEB_FORM', 'trial', 'NEW', 'Программа: Kinder 4–6\nKommt mit Tochter'],
+      ['anna.probe@example.de', '+49 171 0000000', 'WEB_FORM', 'trial', 'NEW', 'Programm: Kinder 4–6\nKommt mit Tochter'],
     );
     const card = await manager.get('nova', `/api/leads/${lead.id}`);
     assert.deepEqual(card.json.history.map(h => [h.previousStatus, h.newStatus, h.changedBy]), [[null, 'NEW', null]]);

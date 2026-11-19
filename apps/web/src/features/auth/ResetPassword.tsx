@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { Brand, Button, Card, Centered, Field, Notice } from '../../components/ui';
+import { LanguageSwitcher, useI18n } from '../../i18n/client';
 import { ApiError, post } from './api';
 
 /**
@@ -25,7 +26,12 @@ export function ResetPassword() {
   return token ? <NewPassword token={token} /> : <RequestLink />;
 }
 
+function Header() {
+  return <div className="flex items-center justify-between gap-3"><Brand /><LanguageSwitcher /></div>;
+}
+
 function RequestLink() {
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
@@ -36,31 +42,32 @@ function RequestLink() {
     setBusy(true);
     setError(null);
     try { await post('/api/auth/password-reset/request', { email }, { retry: false }); setSent(true); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Не удалось отправить запрос'); }
+    catch (e) { setError(e instanceof ApiError ? e.message : t('reset.requestFailed')); }
     finally { setBusy(false); }
   }
 
   return (
     <Centered>
-      <Brand />
-      <h1 className="mb-6 mt-3 text-2xl font-semibold tracking-tight">Восстановление пароля</h1>
+      <Header />
+      <h1 className="mb-6 mt-3 text-2xl font-semibold tracking-tight">{t('reset.title')}</h1>
       <Card>
         {sent ? (
-          <Notice tone="info">Если такой аккаунт есть, мы отправили на {email} письмо со ссылкой. Она действует 1 час.</Notice>
+          <Notice tone="info">{t('reset.sent', { email })}</Notice>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             {error && <Notice>{error}</Notice>}
-            <Field label="Email" type="email" autoComplete="username" required maxLength={320} value={email} onChange={e => setEmail(e.target.value)} />
-            <Button type="submit" disabled={busy}>{busy ? 'Отправка…' : 'Отправить ссылку'}</Button>
+            <Field label={t('common.email')} type="email" autoComplete="username" required maxLength={320} value={email} onChange={e => setEmail(e.target.value)} />
+            <Button type="submit" disabled={busy}>{busy ? t('common.sending') : t('reset.send')}</Button>
           </form>
         )}
       </Card>
-      <Link href="/login" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">Ко входу</Link>
+      <Link href="/login" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">{t('reset.toLogin')}</Link>
     </Centered>
   );
 }
 
 function NewPassword({ token }: { token: string }) {
+  const { t } = useI18n();
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [busy, setBusy] = useState(false);
@@ -69,30 +76,30 @@ function NewPassword({ token }: { token: string }) {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (password !== repeat) { setError('Пароли не совпадают'); return; }
+    if (password !== repeat) { setError(t('password.mismatch')); return; }
     setBusy(true);
     setError(null);
     try { await post('/api/auth/password-reset/confirm', { token, newPassword: password }, { retry: false }); setDone(true); }
-    catch (e) { setError(e instanceof ApiError ? e.message : 'Не удалось сменить пароль'); }
+    catch (e) { setError(e instanceof ApiError ? e.message : t('password.failed')); }
     finally { setBusy(false); }
   }
 
   return (
     <Centered>
-      <Brand />
-      <h1 className="mb-6 mt-3 text-2xl font-semibold tracking-tight">Новый пароль</h1>
+      <Header />
+      <h1 className="mb-6 mt-3 text-2xl font-semibold tracking-tight">{t('reset.newTitle')}</h1>
       <Card>
         {done ? (
           <div className="space-y-4">
-            <Notice tone="info">Пароль изменён. Все прежние сеансы завершены.</Notice>
-            <Link href="/login" className="block w-full rounded-md bg-teal-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-teal-900">Войти</Link>
+            <Notice tone="info">{t('reset.done')}</Notice>
+            <Link href="/login" className="block w-full rounded-md bg-teal-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-teal-900">{t('common.signIn')}</Link>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             {error && <Notice>{error}</Notice>}
-            <Field label="Новый пароль (не меньше 12 символов)" type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={e => setPassword(e.target.value)} />
-            <Field label="Повторите пароль" type="password" autoComplete="new-password" required value={repeat} onChange={e => setRepeat(e.target.value)} />
-            <Button type="submit" disabled={busy}>{busy ? 'Сохранение…' : 'Сохранить пароль'}</Button>
+            <Field label={t('password.new')} type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={password} onChange={e => setPassword(e.target.value)} />
+            <Field label={t('password.repeat')} type="password" autoComplete="new-password" required value={repeat} onChange={e => setRepeat(e.target.value)} />
+            <Button type="submit" disabled={busy}>{busy ? t('common.saving') : t('password.save')}</Button>
           </form>
         )}
       </Card>

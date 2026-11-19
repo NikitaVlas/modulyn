@@ -73,10 +73,10 @@ describe('5.2 / 5.7 invitations by e-mail', () => {
     assert.deepEqual([existing.status, existing.body], [fresh.status, fresh.body], 'no hint whether an account exists');
 
     const mail = outbox.find(m => m.to === 'new.person@nova-team.example');
-    assert.equal(mail.subject, 'Приглашение в Nova CRM');
-    assert.match(mail.text, /Nova Admin приглашает вас в Nova CRM/);
+    assert.equal(mail.subject, 'Einladung zu Nova CRM');
+    assert.match(mail.text, /Nova Admin lädt Sie zu Nova CRM ein/);
     assert.match(mail.text, /http:\/\/app\.localhost:8080\/invite#[A-Za-z0-9_-]{43}/);
-    assert.match(mail.html, /Принять приглашение/);
+    assert.match(mail.html, /Einladung annehmen/);
 
     const list = await admin.get('nova', '/api/members');
     assert.deepEqual(list.json.invitations.map(i => i.email).sort(), ['admin@company-b.example', 'new.person@nova-team.example']);
@@ -94,7 +94,7 @@ describe('5.2 / 5.7 invitations by e-mail', () => {
     assert.equal((await admin.post('nova', '/api/members/invitations', { email: 'ok@x.example', name: '', role: 'MANAGER' })).status, 400);
     assert.equal((await admin.post('nova', '/api/members/invitations', { email: 'ok@x.example', name: 'x', role: 'OWNER' })).status, 400);
     const dup = await admin.post('nova', '/api/members/invitations', { email: 'manager@shared.example', name: 'x', role: 'MANAGER' });
-    assert.deepEqual([dup.status, dup.json.message], [409, 'Этот человек уже работает в компании']);
+    assert.deepEqual([dup.status, dup.json.message], [409, 'Diese Person arbeitet bereits im Unternehmen']);
   });
 
   test('a new person sets a password and enters the company with the invited role', async () => {
@@ -103,7 +103,7 @@ describe('5.2 / 5.7 invitations by e-mail', () => {
     const info = await b.post('app', '/api/invitations/inspect', { token });
     assert.deepEqual(info.json, {
       companyName: 'Nova CRM', email: 'new.person@nova-team.example', name: 'New Person', role: 'MANAGER',
-      status: 'open', accountExists: false, signedInAs: null, google: true,
+      status: 'open', accountExists: false, signedInAs: null, google: true, locale: 'de',
     });
     assert.equal((await b.post('app', '/api/invitations/accept', { token, password: 'short' })).status, 400);
     const ok = await b.post('app', '/api/invitations/accept', { token, name: 'Новый Человек', password: 'new person passphrase' });
@@ -236,7 +236,7 @@ describe('5.3 roles and access', () => {
   test('nobody changes themselves; two admins demoting each other leave at least one admin', async () => {
     const a = await member('admin@company-b.example', 'company-b');
     const self = await a.patch('company-b', `/api/members/${users['admin@company-b.example'].id}`, { isActive: false });
-    assert.deepEqual([self.status, self.json.message], [400, 'Свою роль и доступ может изменить только другой администратор']);
+    assert.deepEqual([self.status, self.json.message], [400, 'Die eigene Rolle und den eigenen Zugang kann nur ein anderer Administrator ändern']);
 
     const managerId = users['manager@shared.example'].id;
     await a.patch('company-b', `/api/members/${managerId}`, { role: 'TENANT_ADMIN' });
@@ -291,7 +291,7 @@ describe('5.6 password reset by e-mail', () => {
     assert.ok(!outbox.some(m => m.to === 'nobody@nowhere.example'));
     const token = mailToken(outbox, 'admin@suspended.example', 'reset-password');
     assert.ok(token);
-    assert.match(outbox.find(m => m.to === 'admin@suspended.example').subject, /Восстановление пароля/);
+    assert.match(outbox.find(m => m.to === 'admin@suspended.example').subject, /Passwort zurücksetzen/);
 
     assert.equal((await browser().post('app', '/api/auth/password-reset/confirm', { token, newPassword: 'short' })).status, 400);
     assert.equal((await browser().post('app', '/api/auth/password-reset/confirm', { token, newPassword: 'reset passphrase 2026' })).status, 204);

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
+import type { Locale } from '@modulyn/i18n';
 import type { TenantRole } from '../tenancy/request-context.js';
 import { DatabaseService } from './database.service.js';
 import { TenantDb } from './tenant-db.service.js';
@@ -19,10 +20,14 @@ export interface InvitationRow { id: string; email: string; name: string; role: 
 export interface InvitationInfo {
   id: string; tenantId: string; tenantSlug: string; tenantName: string; tenantActive: boolean;
   email: string; name: string; role: TenantRole; open: boolean;
+  /** Phase 10 (I4): язык пригласившего — язык письма и страницы приглашения. */
+  locale: Locale;
 }
+/** Новый аккаунт получает язык, на котором человек принимал приглашение (иначе — язык приглашения). */
 export type NewMemberAccount =
   | { kind: 'existing'; userId: string }
-  | { kind: 'new'; name: string; passwordHash: string | null; googleSubject?: string };
+  | { kind: 'new'; name: string; passwordHash: string | null; googleSubject?: string; locale?: Locale };
+type NewInvitation = { email: string; name: string; role: TenantRole; tokenHash: string; expiresAt: Date; invitedById: string | null; locale: Locale };
 
 export class MemberRuleError extends Error {
   constructor(readonly reason: 'self' | 'last-admin' | 'not-found') { super(reason); this.name = 'MemberRuleError'; }
@@ -68,12 +73,12 @@ export class MembersStore {
   }
 
   /** Новое приглашение; открытое приглашение на тот же email отзывается в той же транзакции (C8). */
-  createInvitation(tenantId: string, data: { email: string; name: string; role: TenantRole; tokenHash: string; expiresAt: Date; invitedById: string | null }): Promise<string> {
+  createInvitation(tenantId: string, data: NewInvitation): Promise<string> {
     return this.tenantDb.runInTenant(tenantId, tx => this.insertInvitation(tx, tenantId, data));
   }
 
   /** То же внутри уже открытой транзакции компании (создание компании платформой, C3). */
-  async insertInvitation(tx: Tx, tenantId: string, data: { email: string; name: string; role: TenantRole; tokenHash: string; expiresAt: Date; invitedById: string | null }): Promise<string> {
+  async insertInvitation(tx: Tx, tenantId: string, data: NewInvitation): Promise<string> {
     await tx.invitation.updateMany({ where: { email: data.email, acceptedAt: null, revokedAt: null }, data: { revokedAt: new Date() } });
     const created = await tx.invitation.create({ data: { tenantId, ...data }, select: { id: true } });
     await tx.tenantAuditLog.create({
@@ -83,7 +88,7 @@ export class MembersStore {
   }
 
   /** Повторная отправка: новая ссылка и срок, старая ссылка перестаёт работать. */
-  async reissueInvitation(tenantId: string, id: string, tokenHash: string, expiresAt: Date, actorUserId: string | null): Promise<{ email: string; name: string } | null> {
+  async reissueInvitation(tenantId: string, id: string, tokenHash: string, expiresAt: Date, actorUserId: string | null): Promise<{ email: string; name: string; locale: Locale } | null> {
     return this.tenantDb.runInTenant(tenantId, async tx => {
       const rows = await tx.invitation.updateManyAndReturn({
         where: { id, acceptedAt: null, revokedAt: null }, data: { tokenHash, expiresAt },
@@ -91,7 +96,7 @@ export class MembersStore {
       const row = rows[0];
       if (!row) return null;
       await tx.tenantAuditLog.create({ data: { tenantId, actorUserId, action: 'invitation.resent', entityType: 'invitation', entityId: id } });
-      return { email: row.email, name: row.name };
+      return { email: row.email, name: row.name, locale: row.locale };
     });
   }
 
@@ -155,12 +160,12 @@ export class MembersStore {
     return this.inToken(tokenHash, async tx => {
       const inv = await tx.invitation.findUnique({
         where: { tokenHash },
-        select: { id: true, tenantId: true, email: true, name: true, role: true, expiresAt: true, acceptedAt: true, revokedAt: true, tenant: { select: { slug: true, displayName: true, status: true } } },
+        select: { id: true, tenantId: true, email: true, name: true, role: true, locale: true, expiresAt: true, acceptedAt: true, revokedAt: true, tenant: { select: { slug: true, displayName: true, status: true } } },
       });
       if (!inv) return null;
       return {
         id: inv.id, tenantId: inv.tenantId, tenantSlug: inv.tenant.slug, tenantName: inv.tenant.displayName, tenantActive: inv.tenant.status === 'ACTIVE',
-        email: inv.email, name: inv.name, role: inv.role,
+        email: inv.email, name: inv.name, role: inv.role, locale: inv.locale,
         open: inv.acceptedAt === null && inv.revokedAt === null && inv.expiresAt > new Date(),
       };
     });
@@ -190,7 +195,7 @@ export class MembersStore {
       } else {
         if (await tx.user.findUnique({ where: { email: inv.email }, select: { id: true } })) return null; // аккаунт появился — нужен вход
         userId = (await tx.user.create({
-          data: { email: inv.email, name: account.name, passwordHash: account.passwordHash, emailVerifiedAt: now },
+          data: { email: inv.email, name: account.name, passwordHash: account.passwordHash, emailVerifiedAt: now, locale: account.locale ?? inv.locale },
           select: { id: true },
         })).id;
         if (account.googleSubject) {

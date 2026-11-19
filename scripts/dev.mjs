@@ -8,12 +8,13 @@ const isScript = /\.[cm]?js$/.test(pnpmCli);
 const pnpmCommand = isScript ? process.execPath : pnpmCli;
 const pnpmPrefix = isScript ? [pnpmCli] : [];
 function pnpm(args) { return spawn(pnpmCommand, [...pnpmPrefix, ...args], { stdio: 'inherit' }); }
-for (const name of ['@modulyn/contracts', '@modulyn/api']) {
+for (const name of ['@modulyn/contracts', '@modulyn/i18n', '@modulyn/api']) {
   const result = spawnSync(pnpmCommand, [...pnpmPrefix, '--filter', name, 'build'], { stdio: 'inherit' });
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 const children = [
   pnpm(['--filter', '@modulyn/contracts', 'exec', 'tsc', '--watch', '--preserveWatchOutput']),
+  pnpm(['--filter', '@modulyn/i18n', 'exec', 'tsc', '--watch', '--preserveWatchOutput']),
   pnpm(['--filter', '@modulyn/api', 'exec', 'tsc', '--watch', '--preserveWatchOutput']),
   // Next.js dev проксирует /api и передаёт исходный Host в X-Forwarded-Host (только для разработки).
   // Публичные адреса в режиме dev — Next.js на :3000 (перенаправления между app.localhost и поддоменами).

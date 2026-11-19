@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { t } from '../i18n.js';
 import { Injectable } from '@nestjs/common';
 import { Algorithm, hash, verify } from '@node-rs/argon2';
 import { PASSWORD_MAX, PASSWORD_MIN, TEMP_PASSWORD_LENGTH } from './auth.constants.js';
@@ -43,8 +44,8 @@ export function temporaryPassword(length = TEMP_PASSWORD_LENGTH): string {
 /** Ошибка политики нового пароля или null. Без требований к составу символов (A8). */
 export function passwordPolicyError(password: string): string | null {
   const length = [...password].length;
-  if (length < PASSWORD_MIN) return `Пароль должен содержать не меньше ${PASSWORD_MIN} символов`;
-  if (length > PASSWORD_MAX) return `Пароль должен содержать не больше ${PASSWORD_MAX} символов`;
-  if (password.trim().length === 0) return 'Пароль не может состоять из пробелов';
+  if (length < PASSWORD_MIN) return t('err.passwordTooShort', { min: PASSWORD_MIN });
+  if (length > PASSWORD_MAX) return t('err.passwordTooLong', { max: PASSWORD_MAX });
+  if (password.trim().length === 0) return t('err.passwordBlank');
   return null;
 }

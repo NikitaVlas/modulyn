@@ -1,4 +1,7 @@
+'use client';
+
 import type { ReactNode } from 'react';
+import { useI18n } from '../i18n/client';
 
 /** Общие элементы интерфейса: минималистичные, без лишних визуальных деталей. */
 
@@ -40,5 +43,6 @@ export function Button({ variant = 'primary', ...props }: { variant?: 'primary' 
 }
 
 export function Loading() {
-  return <Centered><Brand /><p className="mt-3 text-sm text-slate-500">Загрузка…</p></Centered>;
+  const { t } = useI18n();
+  return <Centered><Brand /><p className="mt-3 text-sm text-slate-500">{t('common.loading')}</p></Centered>;
 }

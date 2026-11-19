@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { currentRequestContext, type ContextKind, type Restriction, type TenantRole } from '../tenancy/request-context.js';
 import { ModulesStore } from '../database/modules-store.service.js';
+import { t } from '../i18n.js';
 import type { ModuleKey } from '../modules/registry.js';
 import { ALLOW_RESTRICTED_KEY, CONTEXTS_KEY, MODULE_KEY, PUBLIC_KEY, ROLES_KEY } from './decorators.js';
 import { SessionsService } from './sessions.service.js';
@@ -40,6 +41,7 @@ export class AuthGuard implements CanActivate {
       : context.kind === 'app' ? await this.sessions.authenticateApp(req) : await this.sessions.authenticatePlatform(req);
     if (!principal) throw new UnauthorizedException();
     (context as { principal?: typeof principal }).principal = principal;
+    context.locale = principal.locale; // Phase 10 (I2): ответы — на языке аккаунта
 
     if (principal.restricted) {
       const permitted = this.reflector.getAllAndOverride<Restriction[] | undefined>(ALLOW_RESTRICTED_KEY, targets) ?? [];
@@ -57,7 +59,7 @@ export class AuthGuard implements CanActivate {
     const module = this.reflector.getAllAndOverride<ModuleKey | undefined>(MODULE_KEY, targets);
     if (module) {
       if (context.kind !== 'tenant' || !(await this.modules.isEnabled(context.tenant.tenantId, module))) {
-        throw new ForbiddenException({ statusCode: 403, message: 'Раздел отключён для вашей компании', code: 'MODULE_DISABLED' });
+        throw new ForbiddenException({ statusCode: 403, message: t('err.moduleDisabled'), code: 'MODULE_DISABLED' });
       }
     }
     return true;

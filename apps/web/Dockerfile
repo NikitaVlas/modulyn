@@ -7,6 +7,7 @@ COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 COPY packages/config/package.json ./packages/config/
 COPY packages/contracts/package.json ./packages/contracts/
+COPY packages/i18n/package.json ./packages/i18n/
 RUN --mount=type=cache,id=modulyn-pnpm,target=/pnpm/store pnpm install --frozen-lockfile --store-dir /pnpm/store
 COPY apps ./apps
 COPY packages ./packages

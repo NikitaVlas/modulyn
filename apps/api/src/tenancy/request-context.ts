@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import type { Locale } from '@modulyn/i18n';
 
 /**
  * Контекст текущего HTTP-запроса (подшаги 2.4, 3.5).
@@ -20,10 +21,10 @@ export type TenantRole = 'TENANT_ADMIN' | 'MANAGER';
  */
 export type Restriction = 'password-change' | 'mfa-setup';
 
-/** Кто выполняет запрос. Заполняется guard аутентификации после проверки токена и сессии в БД. */
-export interface TenantPrincipal { userId: string; sessionId: string; role: TenantRole; restricted?: Restriction }
-export interface AppPrincipal { userId: string; sessionId: string; restricted?: Restriction }
-export interface PlatformPrincipal { adminId: string; sessionId: string; restricted?: Restriction }
+/** Кто выполняет запрос. Заполняется guard аутентификации после проверки токена и сессии в БД. locale — язык аккаунта (Phase 10). */
+export interface TenantPrincipal { userId: string; sessionId: string; role: TenantRole; locale: Locale; restricted?: Restriction }
+export interface AppPrincipal { userId: string; sessionId: string; locale: Locale; restricted?: Restriction }
+export interface PlatformPrincipal { adminId: string; sessionId: string; locale: Locale; restricted?: Restriction }
 
 export function restrictionOf(state: { passwordChangeRequired: boolean; mfaSetupRequired: boolean }): Restriction | undefined {
   if (state.passwordChangeRequired) return 'password-change';
@@ -34,8 +35,9 @@ export function restrictionOf(state: { passwordChangeRequired: boolean; mfaSetup
 /**
  * host — исходный Host запроса (с портом), как его видел браузер; нужен для проверки Origin (A7).
  * ip — адрес клиента для ограничения входа (A9).
+ * locale — язык ответов (Phase 10, I2): из cookie до входа, после входа — язык аккаунта (ставит guard).
  */
-interface Common { host?: string; ip?: string | undefined }
+interface Common { host?: string; ip?: string | undefined; locale?: Locale }
 
 export type RequestContext =
   | (Common & { kind: 'tenant'; tenant: TenantRef; principal?: TenantPrincipal })

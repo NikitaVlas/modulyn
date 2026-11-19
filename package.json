@@ -8,9 +8,9 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "typecheck": "pnpm --filter @modulyn/contracts build && pnpm -r typecheck",
+    "typecheck": "pnpm --filter @modulyn/contracts --filter @modulyn/i18n build && pnpm -r typecheck",
     "lint": "eslint .",
-    "test": "pnpm --filter @modulyn/contracts build && pnpm --filter @modulyn/api test",
+    "test": "pnpm --filter @modulyn/contracts --filter @modulyn/i18n build && pnpm --filter @modulyn/i18n test && pnpm --filter @modulyn/api test",
     "test:integration": "node scripts/test-integration.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "dev": "node scripts/dev.mjs",

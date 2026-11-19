@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import type { Locale } from '@modulyn/i18n';
+import { requestLocale } from '../i18n.js';
 import { TokensService } from '../auth/tokens.service.js';
 import { originFor, parseEnvironment } from '../config/environment.js';
 import { MembersStore } from '../database/members-store.service.js';
@@ -29,13 +31,15 @@ export class InvitationsService {
     return `${this.appOrigin}/invite#${token}`;
   }
 
+  /** Phase 10 (I4): язык приглашения — язык того, кто приглашает (администратор компании или платформы). */
   async issue(tenantId: string, companyName: string, input: { email: string; name: string; role: TenantRole }, inviter: { userId: string; name: string } | null): Promise<boolean> {
     const { token, tokenHash, expiresAt } = this.newToken();
-    await this.store.createInvitation(tenantId, { ...input, tokenHash, expiresAt, invitedById: inviter?.userId ?? null });
-    return this.sendInvitation(input.email, companyName, inviter?.name ?? null, token);
+    const locale = requestLocale();
+    await this.store.createInvitation(tenantId, { ...input, tokenHash, expiresAt, invitedById: inviter?.userId ?? null, locale });
+    return this.sendInvitation(input.email, companyName, inviter?.name ?? null, token, locale);
   }
 
-  sendInvitation(email: string, companyName: string, inviterName: string | null, token: string): Promise<boolean> {
-    return this.mail.send(invitationMail({ to: email, companyName, inviterName, link: this.link(token) }));
+  sendInvitation(email: string, companyName: string, inviterName: string | null, token: string, locale: Locale): Promise<boolean> {
+    return this.mail.send(invitationMail({ to: email, companyName, inviterName, link: this.link(token), locale }));
   }
 }

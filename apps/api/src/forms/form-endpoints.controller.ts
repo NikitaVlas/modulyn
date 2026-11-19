@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Query } from '@nestjs/common';
+import { t } from '../i18n.js';
 import type {
   FormEndpointCreatedResponse, FormEndpointInfo, FormSecretResponse, FormSubmissionEntry,
 } from '@modulyn/contracts';
@@ -13,19 +14,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE_DETAIL = /^[A-Za-z0-9_.-]{1,50}$/;
 
 function object(body: unknown): Record<string, unknown> {
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new BadRequestException('Некорректный запрос');
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new BadRequestException(t('err.badRequest'));
   return body as Record<string, unknown>;
 }
 
 /** Разрешённые адреса сайта (BROWSER): только origin — схема, домен и порт, без пути. */
 export function parseOrigins(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length > 10) throw new BadRequestException('Разрешённых адресов — не больше 10');
+  if (!Array.isArray(value) || value.length > 10) throw new BadRequestException(t('err.originsMax'));
   return value.map(v => {
     let url: URL;
-    try { url = new URL(String(v).trim()); } catch { throw new BadRequestException(`Некорректный адрес сайта: ${String(v).slice(0, 80)}`); }
+    try { url = new URL(String(v).trim()); } catch { throw new BadRequestException(t('err.originInvalid', { value: String(v).slice(0, 80) })); }
     const local = url.hostname === 'localhost' || url.hostname.endsWith('.localhost');
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw new BadRequestException('Адрес сайта должен начинаться с https://');
-    if ((url.pathname !== '/' && url.pathname !== '') || url.search || url.hash || url.username) throw new BadRequestException('Укажите только адрес сайта, без пути: https://example.com');
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) throw new BadRequestException(t('err.originHttps'));
+    if ((url.pathname !== '/' && url.pathname !== '') || url.search || url.hash || url.username) throw new BadRequestException(t('err.originNoPath'));
     return url.origin;
   });
 }
@@ -64,11 +65,11 @@ export class FormEndpointsController {
   async create(@Body() raw: unknown, @CurrentTenantUser() me: TenantPrincipal): Promise<FormEndpointCreatedResponse> {
     const body = object(raw);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
-    if (name.length === 0 || name.length > 100) throw new BadRequestException('Название — от 1 до 100 символов');
-    if (body.mode !== 'SERVER' && body.mode !== 'BROWSER') throw new BadRequestException('Выберите режим: с сервера сайта или из браузера');
+    if (name.length === 0 || name.length > 100) throw new BadRequestException(t('err.endpointName'));
+    if (body.mode !== 'SERVER' && body.mode !== 'BROWSER') throw new BadRequestException(t('err.endpointMode'));
     const sourceDetail = this.sourceDetail(body.sourceDetail);
     const allowedOrigins = body.allowedOrigins === undefined ? [] : parseOrigins(body.allowedOrigins);
-    if (body.mode === 'BROWSER' && allowedOrigins.length === 0) throw new BadRequestException('Для отправки из браузера укажите адрес сайта');
+    if (body.mode === 'BROWSER' && allowedOrigins.length === 0) throw new BadRequestException(t('err.endpointOriginRequired'));
     const mapError = mappingError(body.fieldMapping);
     if (mapError) throw new BadRequestException(mapError);
     const secret = body.mode === 'SERVER' ? this.newSecret() : null;
@@ -86,11 +87,11 @@ export class FormEndpointsController {
     if (!UUID.test(id)) throw new NotFoundException();
     const body = object(raw);
     if (Object.keys(body).some(k => !['name', 'sourceDetail', 'allowedOrigins', 'fieldMapping', 'isActive'].includes(k))) {
-      throw new BadRequestException('Режим и ключ точки не меняются — создайте новую точку');
+      throw new BadRequestException(t('err.endpointImmutable'));
     }
     const changes: Parameters<FormsStore['update']>[1] = {};
     if (body.name !== undefined) {
-      if (typeof body.name !== 'string' || body.name.trim().length === 0 || body.name.length > 100) throw new BadRequestException('Название — от 1 до 100 символов');
+      if (typeof body.name !== 'string' || body.name.trim().length === 0 || body.name.length > 100) throw new BadRequestException(t('err.endpointName'));
       changes.name = body.name.trim();
     }
     if (body.sourceDetail !== undefined) changes.sourceDetail = this.sourceDetail(body.sourceDetail);
@@ -101,7 +102,7 @@ export class FormEndpointsController {
       changes.fieldMapping = body.fieldMapping as FieldMapping | null;
     }
     if (body.isActive !== undefined) {
-      if (typeof body.isActive !== 'boolean') throw new BadRequestException('Некорректный статус');
+      if (typeof body.isActive !== 'boolean') throw new BadRequestException(t('err.statusInvalid'));
       changes.isActive = body.isActive;
     }
     const updated = await this.forms.update(id, changes, me.userId);
@@ -116,14 +117,14 @@ export class FormEndpointsController {
     const secret = this.newSecret();
     const result = await this.forms.rotateSecret(id, secret.secretHash, secret.secretPrefix, me.userId);
     if (result === 'not-found') throw new NotFoundException();
-    if (result === 'not-server') throw new BadRequestException('У точки для браузера нет секрета');
+    if (result === 'not-server') throw new BadRequestException(t('err.browserNoSecret'));
     return { secret: secret.secret };
   }
 
   /** Журнал приёма (8.11, W7): последние 100 записей, без содержимого форм. */
   @Get('submissions')
   async submissions(@Query('endpointId') endpointId: unknown): Promise<FormSubmissionEntry[]> {
-    if (endpointId !== undefined && (typeof endpointId !== 'string' || !UUID.test(endpointId))) throw new BadRequestException('Некорректная точка приёма');
+    if (endpointId !== undefined && (typeof endpointId !== 'string' || !UUID.test(endpointId))) throw new BadRequestException(t('err.endpointInvalid'));
     const rows = await this.forms.submissions((endpointId as string | undefined) ?? null);
     return rows.map(r => ({
       id: r.id, endpointId: r.endpoint.id, endpointName: r.endpoint.name, status: r.status, errorCode: r.errorCode,
@@ -133,7 +134,7 @@ export class FormEndpointsController {
 
   private sourceDetail(value: unknown): string | null {
     if (value === undefined || value === null || value === '') return null;
-    if (typeof value !== 'string' || !SOURCE_DETAIL.test(value.trim())) throw new BadRequestException('Тип заявки: латиница, цифры, «-», «_», до 50 символов (например trial)');
+    if (typeof value !== 'string' || !SOURCE_DETAIL.test(value.trim())) throw new BadRequestException(t('err.sourceDetail'));
     return value.trim();
   }
 }

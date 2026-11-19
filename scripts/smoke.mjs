@@ -53,6 +53,14 @@ assert.equal(unknown.status, 404);
 assert.deepEqual([suspended.status, suspended.body], [unknown.status, unknown.body]);
 assert.equal((await request('/api/tenant', 'admin.localhost' + port)).status, 404);
 
+// Phase 10: интерфейс по умолчанию на немецком; язык переключателя (cookie) — сразу при отрисовке на сервере.
+const loginDe = await request('/login', 'app.localhost' + port);
+assert.match(loginDe.body, /<html lang="de"/, 'German by default');
+assert.match(loginDe.body, /Anmeldung beim CRM/);
+const loginEn = await request('/login', 'app.localhost' + port, { headers: { Cookie: 'modulyn_lang=en' } });
+assert.match(loginEn.body, /<html lang="en"/);
+assert.match(loginEn.body, /Sign in to the CRM/);
+
 // Phase 3: вход на app.localhost, переход в Nova через одноразовый код, сессия не действует в Company B.
 // Пароль синтетических пользователей — SEED_PASSWORD из apps/api/scripts/seed.mjs (только локально).
 const appHost = 'app.localhost' + port;
@@ -110,4 +118,4 @@ const found = await request('/api/leads?q=Smoke%20Website', 'nova.localhost' + p
 assert.equal(JSON.parse(found.body).total, 1, 'website lead visible in Nova');
 await request('/api/auth/logout', 'nova.localhost' + port, { method: 'POST', headers: { Origin: 'http://nova.localhost' + port, 'content-type': 'application/json', Cookie: novaCookies }, body: '{}' });
 assert.equal((await request('/api/auth/me', 'nova.localhost' + port, { headers: { Cookie: novaCookies } })).status, 401, 'logout revokes');
-console.log('PASS: page (+ frame protection headers), liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), website form intake (Nova request, duplicate, other company), logout');
+console.log('PASS: page (+ frame protection headers), languages (de default, en by cookie), liveness, PostgreSQL readiness, security header, API 404, three local hostnames, tenant resolution (nova, company-b, unknown = suspended, admin), login → handoff → Nova session, session not valid on Company B, leads module (summary + list), website form intake (Nova request, duplicate, other company), logout');

@@ -1,5 +1,7 @@
 'use client';
 
+import { clientT } from '../../i18n/client';
+
 /**
  * Запросы к API того же хоста. Токены лежат в HttpOnly cookies, JavaScript их не видит и не передаёт сам.
  * При 401 выполняется одно обновление сессии (общее для параллельных запросов), затем запрос повторяется.
@@ -17,8 +19,9 @@ async function refreshOnce(): Promise<boolean> {
   return refreshing;
 }
 
+/** code — машинный код ошибки API, если есть (MODULE_DISABLED, LEAD_CHANGED, MFA_INVALID_CODE…). */
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
 }
 
 async function request(path: string, init: RequestInit): Promise<Response> {
@@ -29,12 +32,9 @@ async function request(path: string, init: RequestInit): Promise<Response> {
   });
 }
 
-/** Нет ответа сервера (сеть, сервер не запущен): status 0. */
-export const OFFLINE_MESSAGE = 'Нет связи с сервером. Проверьте подключение к интернету и попробуйте ещё раз.';
-
-/** Запрос; сетевой сбой превращается в ApiError(0) с понятным текстом, а не в «TypeError: Failed to fetch». */
+/** Запрос; сетевой сбой (status 0) превращается в ApiError с понятным текстом, а не в «TypeError: Failed to fetch». */
 async function send(path: string, init: RequestInit): Promise<Response> {
-  try { return await request(path, init); } catch { throw new ApiError(0, OFFLINE_MESSAGE); }
+  try { return await request(path, init); } catch { throw new ApiError(0, clientT('client.offline')); }
 }
 
 /**
@@ -47,16 +47,19 @@ export async function api<T>(path: string, init: RequestInit = {}, { retry = tru
   let response = await send(path, init);
   if (response.status === 401 && retry && await refreshOnce()) response = await send(path, init);
   if (!response.ok) {
-    let message = 'Не удалось выполнить запрос. Попробуйте ещё раз.';
-    if (response.status === 401 && retry) message = 'Сеанс завершён. Обновите страницу, чтобы войти снова.';
-    else if (response.status === 403) message = 'Недостаточно прав для этого действия.';
-    else if (response.status >= 500) message = 'Сервис временно недоступен. Попробуйте через минуту — введённые данные не потеряны.';
+    // Сообщения API уже на языке пользователя (Phase 10, I5); общие случаи — из словаря интерфейса.
+    let message = clientT('client.generic');
+    let code: string | undefined;
+    if (response.status === 401 && retry) message = clientT('client.sessionEnded');
+    else if (response.status === 403) message = clientT('client.forbidden');
+    else if (response.status >= 500) message = clientT('client.unavailable');
     try {
       const body = await response.json() as { message?: string | string[]; code?: string };
+      code = typeof body.code === 'string' ? body.code : undefined;
       if (typeof body.message === 'string' && response.status !== 401 && response.status !== 403 && response.status < 500) message = body.message;
-      if (response.status === 403 && body.code === 'MODULE_DISABLED') message = 'Раздел отключён для вашей компании. Обратитесь к администратору.';
+      if (response.status === 403 && code === 'MODULE_DISABLED') message = clientT('client.moduleDisabled');
     } catch { /* тело не JSON */ }
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, code);
   }
   if (response.status === 204) return undefined as T;
   return await response.json() as T;

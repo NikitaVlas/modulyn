@@ -82,7 +82,7 @@ export class SessionsService {
     const state = await this.store.tenantSessionRole(tenant.tenantId, claims.sid, claims.sub);
     if (!state) return null;
     const restricted = restrictionOf({ passwordChangeRequired: state.passwordChangeRequired, mfaSetupRequired: false });
-    return { userId: claims.sub, sessionId: claims.sid, role: state.role, ...(restricted ? { restricted } : {}) };
+    return { userId: claims.sub, sessionId: claims.sid, role: state.role, locale: state.locale, ...(restricted ? { restricted } : {}) };
   }
 
   async authenticateApp(req: Request): Promise<AppPrincipal | null> {
@@ -91,7 +91,7 @@ export class SessionsService {
     const state = await this.store.validAppSession(claims.sid, claims.sub);
     if (!state) return null;
     const restricted = restrictionOf(state);
-    return { userId: claims.sub, sessionId: claims.sid, ...(restricted ? { restricted } : {}) };
+    return { userId: claims.sub, sessionId: claims.sid, locale: state.locale, ...(restricted ? { restricted } : {}) };
   }
 
   async authenticatePlatform(req: Request): Promise<PlatformPrincipal | null> {
@@ -100,7 +100,7 @@ export class SessionsService {
     const state = await this.store.validPlatformSession(claims.sid, claims.sub);
     if (!state) return null;
     const restricted = restrictionOf(state);
-    return { adminId: claims.sub, sessionId: claims.sid, ...(restricted ? { restricted } : {}) };
+    return { adminId: claims.sub, sessionId: claims.sid, locale: state.locale, ...(restricted ? { restricted } : {}) };
   }
 
   // ───────────── Ротация ─────────────

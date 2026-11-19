@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { t } from '../i18n.js';
 
 /**
  * Сопоставление и проверка полей формы сайта (Phase 8, W4, W5). Чистые функции без ввода-вывода.
@@ -25,23 +26,23 @@ const PHONE = /^[0-9+()\-\s./]{3,50}$/;
 /** Проверка настройки сопоставления от администратора. null — ошибок нет. */
 export function mappingError(value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'object' || Array.isArray(value)) return 'Некорректное сопоставление полей';
+  if (typeof value !== 'object' || Array.isArray(value)) return t('err.mappingInvalid');
   const m = value as Record<string, unknown>;
-  if (Object.keys(m).some(k => k !== 'fields' && k !== 'extra')) return 'Некорректное сопоставление полей';
+  if (Object.keys(m).some(k => k !== 'fields' && k !== 'extra')) return t('err.mappingInvalid');
   if (m.fields !== undefined) {
-    if (typeof m.fields !== 'object' || m.fields === null || Array.isArray(m.fields)) return 'Некорректные переименования полей';
+    if (typeof m.fields !== 'object' || m.fields === null || Array.isArray(m.fields)) return t('err.mappingRenames');
     for (const [target, source] of Object.entries(m.fields)) {
-      if (!(TARGET_FIELDS as readonly string[]).includes(target)) return `Неизвестное поле заявки: ${target}`;
-      if (typeof source !== 'string' || !FIELD_NAME.test(source)) return `Некорректное имя поля формы для «${target}»`;
+      if (!(TARGET_FIELDS as readonly string[]).includes(target)) return t('err.mappingUnknownField', { field: target });
+      if (typeof source !== 'string' || !FIELD_NAME.test(source)) return t('err.mappingSourceName', { field: target });
     }
   }
   if (m.extra !== undefined) {
-    if (!Array.isArray(m.extra) || m.extra.length > 20) return 'Дополнительных полей — не больше 20';
+    if (!Array.isArray(m.extra) || m.extra.length > 20) return t('err.extraMax');
     for (const e of m.extra) {
-      if (typeof e !== 'object' || e === null) return 'Некорректное дополнительное поле';
+      if (typeof e !== 'object' || e === null) return t('err.extraInvalid');
       const { field, label } = e as Record<string, unknown>;
-      if (typeof field !== 'string' || !FIELD_NAME.test(field)) return 'Некорректное имя дополнительного поля';
-      if (typeof label !== 'string' || label.trim().length === 0 || label.length > 50) return 'Подпись дополнительного поля — от 1 до 50 символов';
+      if (typeof field !== 'string' || !FIELD_NAME.test(field)) return t('err.extraName');
+      if (typeof label !== 'string' || label.trim().length === 0 || label.length > 50) return t('err.extraLabel');
     }
   }
   return null;

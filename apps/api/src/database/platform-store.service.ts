@@ -1,3 +1,4 @@
+import type { Locale } from '@modulyn/i18n';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from './database.service.js';
 import { ModulesStore } from './modules-store.service.js';
@@ -19,7 +20,7 @@ export interface TenantRow {
 export interface NewTenant {
   slug: string; name: string; displayName: string;
   /** C3: приглашение первому администратору (вместо временного пароля B3). */
-  admin: { email: string; name: string; tokenHash: string; expiresAt: Date };
+  admin: { email: string; name: string; tokenHash: string; expiresAt: Date; locale: Locale };
 }
 
 export class SlugTakenError extends Error {
@@ -66,7 +67,7 @@ export class PlatformStore {
         // Приглашение — запись компании: контекст компании внутри той же транзакции (RLS WITH CHECK).
         await tx.$queryRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
         const invitation = await tx.invitation.create({
-          data: { tenantId: tenant.id, email: input.admin.email, name: input.admin.name, role: 'TENANT_ADMIN', tokenHash: input.admin.tokenHash, expiresAt: input.admin.expiresAt },
+          data: { tenantId: tenant.id, email: input.admin.email, name: input.admin.name, role: 'TENANT_ADMIN', tokenHash: input.admin.tokenHash, expiresAt: input.admin.expiresAt, locale: input.admin.locale },
           select: { id: true },
         });
         await tx.tenantAuditLog.create({ data: { tenantId: tenant.id, action: 'invitation.created_by_platform', entityType: 'invitation', entityId: invitation.id } });

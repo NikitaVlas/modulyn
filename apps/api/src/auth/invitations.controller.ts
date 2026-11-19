@@ -1,4 +1,6 @@
 import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, HttpCode, NotFoundException, Post, Req, Res } from '@nestjs/common';
+import { isLocale } from '@modulyn/i18n';
+import { t } from '../i18n.js';
 import type { Request, Response } from 'express';
 import type { InvitationAcceptResponse, InvitationInspectResponse } from '@modulyn/contracts';
 import { AuthStore } from '../database/auth-store.service.js';
@@ -12,11 +14,10 @@ import { SessionsService } from './sessions.service.js';
 import { TokensService } from './tokens.service.js';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{20,128}$/;
-const INVALID_LINK = 'Ссылка недействительна или устарела. Попросите администратора отправить приглашение ещё раз.';
 
 function token(body: unknown): string {
   const value = typeof body === 'object' && body !== null ? (body as Record<string, unknown>).token : undefined;
-  if (typeof value !== 'string' || !TOKEN_PATTERN.test(value)) throw new NotFoundException(INVALID_LINK);
+  if (typeof value !== 'string' || !TOKEN_PATTERN.test(value)) throw new NotFoundException(t('err.inviteLinkInvalid'));
   return value;
 }
 
@@ -43,14 +44,14 @@ export class InvitationsController {
   @Public() @Post('inspect') @HttpCode(200)
   async inspect(@Body() body: unknown, @Req() req: Request): Promise<InvitationInspectResponse> {
     const info = await this.members.inspect(this.tokens.hash(token(body)));
-    if (!info) throw new NotFoundException(INVALID_LINK);
+    if (!info) throw new NotFoundException(t('err.inviteLinkInvalid'));
     const principal = await this.sessions.authenticateApp(req);
     const signedInAs = principal ? (await this.store.findUserById(principal.userId))?.email ?? null : null;
     return {
       companyName: info.tenantName, email: info.email, name: info.name, role: info.role,
       status: info.open && info.tenantActive ? 'open' : 'used',
       accountExists: (await this.store.findUserByEmail(info.email)) !== null,
-      signedInAs, google: this.google.enabled,
+      signedInAs, google: this.google.enabled, locale: info.locale,
     };
   }
 
@@ -59,25 +60,25 @@ export class InvitationsController {
     const tokenHash = this.tokens.hash(token(raw));
     const body = raw as Record<string, unknown>;
     const info = await this.members.inspect(tokenHash);
-    if (!info || !info.open || !info.tenantActive) throw new BadRequestException(INVALID_LINK);
+    if (!info || !info.open || !info.tenantActive) throw new BadRequestException(t('err.inviteLinkInvalid'));
 
     const principal = await this.sessions.authenticateApp(req);
     if (principal) {
       const user = await this.store.findUserById(principal.userId);
-      if (!user || user.email !== info.email) throw new ForbiddenException('Приглашение отправлено на другой email. Выйдите и войдите нужным аккаунтом.');
+      if (!user || user.email !== info.email) throw new ForbiddenException(t('err.inviteOtherEmail'));
       const result = await this.members.accept(tokenHash, { kind: 'existing', userId: user.id }, info.email);
-      if (!result) throw new BadRequestException(INVALID_LINK);
+      if (!result) throw new BadRequestException(t('err.inviteLinkInvalid'));
       return { tenantSlug: result.tenantSlug };
     }
 
-    if (await this.store.findUserByEmail(info.email)) throw new ConflictException('У вас уже есть аккаунт. Войдите, чтобы принять приглашение.');
+    if (await this.store.findUserByEmail(info.email)) throw new ConflictException(t('err.inviteHasAccount'));
     const name = typeof body.name === 'string' && body.name.trim().length > 0 ? body.name.trim() : info.name;
-    if (name.length > 200) throw new BadRequestException('Имя длиннее 200 символов');
+    if (name.length > 200) throw new BadRequestException(t('err.nameTooLong'));
     const password = typeof body.password === 'string' ? body.password : '';
     const policy = passwordPolicyError(password);
     if (policy) throw new BadRequestException(policy);
-    const result = await this.members.accept(tokenHash, { kind: 'new', name, passwordHash: await this.passwords.hash(password) }, info.email);
-    if (!result) throw new BadRequestException(INVALID_LINK);
+    const result = await this.members.accept(tokenHash, { kind: 'new', name, passwordHash: await this.passwords.hash(password), locale: isLocale(body.locale) ? body.locale : info.locale }, info.email);
+    if (!result) throw new BadRequestException(t('err.inviteLinkInvalid'));
     await this.sessions.startApp(res, result.userId);
     return { tenantSlug: result.tenantSlug };
   }
@@ -88,7 +89,7 @@ export class InvitationsController {
     if (!this.google.enabled) throw new NotFoundException();
     const tokenHash = this.tokens.hash(token(body));
     const info = await this.members.inspect(tokenHash);
-    if (!info || !info.open || !info.tenantActive) throw new BadRequestException(INVALID_LINK);
+    if (!info || !info.open || !info.tenantActive) throw new BadRequestException(t('err.inviteLinkInvalid'));
     const start = await this.google.start();
     const cookie = await this.tokens.signState({ state: start.state, nonce: start.nonce, verifier: start.verifier, tenant: info.tenantSlug, invite: tokenHash }, OIDC_STATE_TTL_MS);
     setCookie(res, 'oidcState', cookie, this.sessions.secure, OIDC_STATE_TTL_MS);

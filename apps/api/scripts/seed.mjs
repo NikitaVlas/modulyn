@@ -14,14 +14,14 @@ export const SEED_PASSWORD = 'modulyn-local-dev-password';
 
 /**
  * Phase 8: точка приёма Nova для локальной проверки — настроена так же, как для живого сайта
- * (форма пробной тренировки, режим SERVER, «Программа» в сообщении). Секрет только локальный.
+ * (форма пробной тренировки, режим SERVER, «Programm» в сообщении; Phase 10 — немецкий по умолчанию). Секрет только локальный.
  */
 export const SEED_INTAKE = {
   publicKey: 'nova-local-trial-endpoint',
   secret: 'mdl_local-nova-trial-secret-for-development',
-  name: 'Сайт bjjmoenchengladbach.de (локально)',
+  name: 'Website bjjmoenchengladbach.de (lokal)',
   sourceDetail: 'trial',
-  fieldMapping: { extra: [{ field: 'program', label: 'Программа' }] },
+  fieldMapping: { extra: [{ field: 'program', label: 'Programm' }] },
 };
 
 export const SEED = {

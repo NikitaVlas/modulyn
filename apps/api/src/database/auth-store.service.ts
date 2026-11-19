@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client.js';
+import type { Locale } from '@modulyn/i18n';
 import type { TenantRole } from '../tenancy/request-context.js';
 import { DatabaseService } from './database.service.js';
 import { TenantDb } from './tenant-db.service.js';
@@ -30,15 +31,17 @@ export interface LoginUser {
   id: string; email: string; name: string; passwordHash: string | null; isActive: boolean;
   /** B8: вход временным паролем — до смены пароля доступ ограничен. */
   passwordChangeRequired: boolean; tempPasswordExpiresAt: Date | null;
+  /** Phase 10 (I2): язык интерфейса и писем. */
+  locale: Locale;
 }
 export interface LoginAdmin extends LoginUser {
   passwordHash: string;
   totpSecretEnc: string | null; totpEnabledAt: Date | null; totpLastStep: bigint | null;
 }
 /** Состояние аккаунта для проверки каждого запроса: ограничения доступа (B8, B2). */
-export interface AccountState { passwordChangeRequired: boolean; mfaSetupRequired: boolean }
+export interface AccountState { passwordChangeRequired: boolean; mfaSetupRequired: boolean; locale: Locale }
 
-const USER_SELECT = { id: true, email: true, name: true, passwordHash: true, isActive: true, passwordChangeRequired: true, tempPasswordExpiresAt: true } as const;
+const USER_SELECT = { id: true, email: true, name: true, passwordHash: true, isActive: true, passwordChangeRequired: true, tempPasswordExpiresAt: true, locale: true } as const;
 const ADMIN_SELECT = { ...USER_SELECT, totpSecretEnc: true, totpEnabledAt: true, totpLastStep: true } as const;
 export interface CompanyEntry { slug: string; displayName: string; role: TenantRole }
 
@@ -103,6 +106,15 @@ export class AuthStore {
 
   async findPlatformAdminById(id: string): Promise<LoginAdmin | null> {
     return (await this.client()).platformAdmin.findUnique({ where: { id }, select: ADMIN_SELECT });
+  }
+
+  /** Phase 10 (I2): язык своего аккаунта — только эта строка и только этот столбец. */
+  async setUserLocale(userId: string, locale: Locale): Promise<void> {
+    await (await this.client()).user.update({ where: { id: userId }, data: { locale } });
+  }
+
+  async setPlatformAdminLocale(adminId: string, locale: Locale): Promise<void> {
+    await (await this.client()).platformAdmin.update({ where: { id: adminId }, data: { locale } });
   }
 
   async setPlatformAdminPassword(adminId: string, passwordHash: string): Promise<void> {
@@ -254,9 +266,9 @@ export class AuthStore {
     const now = new Date();
     const row = await (await this.client()).userSession.findFirst({
       where: { id: sessionId, userId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now }, user: { isActive: true } },
-      select: { user: { select: { passwordChangeRequired: true } } },
+      select: { user: { select: { passwordChangeRequired: true, locale: true } } },
     });
-    return row ? { passwordChangeRequired: row.user.passwordChangeRequired, mfaSetupRequired: false } : null;
+    return row ? { passwordChangeRequired: row.user.passwordChangeRequired, mfaSetupRequired: false, locale: row.user.locale } : null;
   }
 
   /** Сессия платформы действительна; ограничения: смена временного пароля, затем настройка второго фактора (B2, B8). */
@@ -264,25 +276,25 @@ export class AuthStore {
     const now = new Date();
     const row = await (await this.client()).platformSession.findFirst({
       where: { id: sessionId, adminId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now }, admin: { isActive: true } },
-      select: { admin: { select: { passwordChangeRequired: true, totpEnabledAt: true } } },
+      select: { admin: { select: { passwordChangeRequired: true, totpEnabledAt: true, locale: true } } },
     });
-    return row ? { passwordChangeRequired: row.admin.passwordChangeRequired, mfaSetupRequired: row.admin.totpEnabledAt === null } : null;
+    return row ? { passwordChangeRequired: row.admin.passwordChangeRequired, mfaSetupRequired: row.admin.totpEnabledAt === null, locale: row.admin.locale } : null;
   }
 
   /**
    * Сессия компании действительна: не отозвана и не истекла, участие в ЭТОЙ компании активно, аккаунт активен.
    * Возвращает актуальную роль из memberships (роль не хранится в токене).
    */
-  async tenantSessionRole(tenantId: string, sessionId: string, userId: string): Promise<{ role: TenantRole; passwordChangeRequired: boolean } | null> {
+  async tenantSessionRole(tenantId: string, sessionId: string, userId: string): Promise<{ role: TenantRole; passwordChangeRequired: boolean; locale: Locale } | null> {
     const now = new Date();
     const row = await this.tenantDb.runInTenant(tenantId, tx => tx.tenantSession.findFirst({
       where: {
         id: sessionId, userId, tenantId, revokedAt: null, expiresAt: { gt: now }, absoluteExpiresAt: { gt: now },
         membership: { isActive: true, user: { isActive: true } },
       },
-      select: { membership: { select: { role: true, user: { select: { passwordChangeRequired: true } } } } },
+      select: { membership: { select: { role: true, user: { select: { passwordChangeRequired: true, locale: true } } } } },
     }));
-    return row ? { role: row.membership.role, passwordChangeRequired: row.membership.user.passwordChangeRequired } : null;
+    return row ? { role: row.membership.role, passwordChangeRequired: row.membership.user.passwordChangeRequired, locale: row.membership.user.locale } : null;
   }
 
   async rotateAppOrPlatform(kind: 'app' | 'platform', tokenHash: string, next: (record: { familyId: string; absoluteExpiresAt: Date }) => Omit<NewSession, 'ownerId' | 'familyId' | 'absoluteExpiresAt'>, graceMs: number): Promise<RotationResult> {

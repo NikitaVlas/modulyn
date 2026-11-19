@@ -95,7 +95,7 @@ describe('4.1 first platform admin, temporary password and two-factor authentica
     const b = browser();
     assert.deepEqual((await b.post('admin', '/api/auth/login', { email: 'steps@platform.example', password: r.password })).json, { ok: true });
     assert.deepEqual((await b.get('admin', '/api/auth/me')).json, {
-      admin: { name: 'Steps', email: 'steps@platform.example' }, passwordChangeRequired: true, mfaSetupRequired: true,
+      admin: { name: 'Steps', email: 'steps@platform.example' }, passwordChangeRequired: true, mfaSetupRequired: true, locale: 'de',
     });
     const blocked = await b.get('admin', '/api/platform/tenants');
     assert.deepEqual([blocked.status, blocked.json.code], [403, 'PASSWORD_CHANGE_REQUIRED']);
@@ -183,12 +183,12 @@ describe('4.2–4.3 companies: create with first admin, settings, suspend and ac
   test('input is validated with clear messages; reserved and taken subdomains are refused', async () => {
     const base = { name: 'Acme GmbH', displayName: 'Acme CRM', adminEmail: 'boss@acme.example', adminName: 'Acme Boss' };
     const cases = [
-      [{ ...base, slug: 'admin' }, 400, /зарезервирован/],
-      [{ ...base, slug: 'Bad_Slug' }, 400, /латинские буквы/],
-      [{ ...base, slug: '-acme' }, 400, /латинские буквы/],
-      [{ ...base, slug: 'nova' }, 409, /уже занят/],
-      [{ ...base, slug: 'acme-x', name: '' }, 400, /Название/],
-      [{ ...base, slug: 'acme-x', adminEmail: 'not-an-email' }, 400, /email/],
+      [{ ...base, slug: 'admin' }, 400, /reserviert/],
+      [{ ...base, slug: 'Bad_Slug' }, 400, /lateinische Buchstaben/],
+      [{ ...base, slug: '-acme' }, 400, /lateinische Buchstaben/],
+      [{ ...base, slug: 'nova' }, 409, /bereits vergeben/],
+      [{ ...base, slug: 'acme-x', name: '' }, 400, /„Name“/],
+      [{ ...base, slug: 'acme-x', adminEmail: 'not-an-email' }, 400, /E-Mail/],
     ];
     for (const [body, status, message] of cases) {
       const r = await admin.b.post('admin', '/api/platform/tenants', body);
@@ -255,7 +255,7 @@ describe('4.2–4.3 companies: create with first admin, settings, suspend and ac
     assert.equal(r.json.displayName, 'Acme Sales');
     assert.equal((await browser().get('acme', '/api/tenant')).json.displayName, 'Acme Sales');
     const slugChange = await admin.b.patch('admin', `/api/platform/tenants/${acme.id}`, { slug: 'other' });
-    assert.deepEqual([slugChange.status, slugChange.json.message], [400, 'Поддомен после создания компании не меняется']);
+    assert.deepEqual([slugChange.status, slugChange.json.message], [400, 'Die Subdomain lässt sich nach dem Anlegen des Unternehmens nicht ändern']);
     await assert.rejects(sql(env.appUrl, "UPDATE tenants SET slug = 'hijack' WHERE slug = 'acme'"), e => e.code === '42501');
     assert.equal((await admin.b.patch('admin', `/api/platform/tenants/${acme.id}`, { status: 'DELETED' })).status, 400);
     assert.equal((await admin.b.get('admin', '/api/platform/tenants/00000000-0000-7000-8000-000000000000')).status, 404);

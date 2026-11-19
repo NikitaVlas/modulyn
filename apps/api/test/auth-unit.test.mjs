@@ -191,15 +191,27 @@ test('guard: a restricted session reaches only routes that allow its restriction
 const { invitationMail, passwordResetMail } = await import('../dist/mail/templates.js');
 
 test('mail templates escape names and carry only the link', () => {
-  const m = invitationMail({ to: 'a@b.example', companyName: 'Nova <script>', inviterName: 'Anna "A"', link: 'http://app.localhost:8080/invite#tok' });
+  const m = invitationMail({ to: 'a@b.example', companyName: 'Nova <script>', inviterName: 'Anna "A"', link: 'http://app.localhost:8080/invite#tok', locale: 'ru' });
   assert.equal(m.subject, 'Приглашение в Nova <script>');
   assert.doesNotMatch(m.html, /<script>/);
   assert.match(m.html, /Nova &#60;script&#62;/);
   assert.match(m.text, /Anna "A" приглашает вас в Nova <script>\./);
   assert.match(m.text, /invite#tok/);
-  const r = passwordResetMail({ to: 'a@b.example', link: 'http://app.localhost:8080/reset-password#t' });
+  const r = passwordResetMail({ to: 'a@b.example', link: 'http://app.localhost:8080/reset-password#t', locale: 'ru' });
   assert.match(r.text, /1 час/);
   assert.match(r.html, /reset-password#t/);
+});
+
+test('Phase 10: mails in the given language, German by default for the platform', () => {
+  const de = invitationMail({ to: 'a@b.example', companyName: 'Nova CRM', inviterName: null, link: 'http://x/invite#t', locale: 'de' });
+  assert.equal(de.subject, 'Einladung zu Nova CRM');
+  assert.match(de.text, /Sie wurden zu Nova CRM eingeladen\./);
+  assert.match(de.html, /<html lang="de">/);
+  assert.match(de.html, /Einladung annehmen/);
+  const en = passwordResetMail({ to: 'a@b.example', link: 'http://x/reset-password#t', locale: 'en' });
+  assert.equal(en.subject, 'Reset your password');
+  assert.match(en.text, /valid for 1 hour/);
+  assert.doesNotMatch(en.text + de.text, /[А-Яа-яЁё]/);
 });
 
 // ───────────── Phase 6: модули ─────────────

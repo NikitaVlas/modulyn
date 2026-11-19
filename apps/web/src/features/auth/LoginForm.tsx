@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { AuthProvidersResponse, LoginResponse, TenantInfoResponse } from '@modulyn/contracts';
 import { Brand, Button, Card, Centered, Field, Notice } from '../../components/ui';
+import { LanguageSwitcher, useI18n } from '../../i18n/client';
 import { ApiError, api, originOf, post } from './api';
 
 interface Props {
@@ -17,16 +18,13 @@ interface Props {
   returnTo?: 'invite' | undefined;
 }
 
-const ERRORS: Record<string, string> = {
-  google: 'Не удалось войти через Google. Вход возможен только для существующего аккаунта с подтверждённым email.',
-};
-
 /** Страница входа app.<домен> (пользователи) и admin.<домен> (платформа). Пароль вводится только здесь (A5). */
 export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Props) {
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(error ? ERRORS[error] ?? null : null);
+  const [message, setMessage] = useState<string | null>(error === 'google' ? t('login.googleFailed') : null);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [google, setGoogle] = useState(false);
   const [mfa, setMfa] = useState(false);
@@ -37,7 +35,7 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
     if (context !== 'app') return;
     api<AuthProvidersResponse>('/api/auth/providers', {}, { retry: false }).then(p => setGoogle(p.google), () => undefined);
     if (tenant) api<TenantInfoResponse>(`/api/auth/tenant-name?slug=${encodeURIComponent(tenant)}`, {}, { retry: false })
-      .then(t => setCompanyName(t.displayName), () => undefined);
+      .then(info => setCompanyName(info.displayName), () => undefined);
   }, [context, tenant]);
 
   const next = () => (returnTo === 'invite' ? '/invite' : tenant ? originOf(tenant, baseDomain) + '/api/auth/handoff/start' : '/');
@@ -53,8 +51,8 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
       window.location.assign(next());
     } catch (e) {
       setMessage(e instanceof ApiError && (e.status === 401 || e.status === 429 || e.status === 400)
-        ? (e.status === 401 ? 'Неверный email или пароль' : e.message)
-        : 'Сервис временно недоступен. Попробуйте позже.');
+        ? (e.status === 401 ? t('login.invalidCredentials') : e.message)
+        : t('common.serviceDownRetry'));
       setBusy(false);
     }
   }
@@ -67,24 +65,26 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
       await post('/api/auth/mfa', { code: code.trim() }, { retry: false });
       router.replace('/');
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401 && e.message !== 'Неверный код') { setMfa(false); setPassword(''); }
-      setMessage(e instanceof ApiError && e.status === 429 ? e.message : 'Неверный код. Если время вышло — войдите заново.');
+      // Истекло время второго шага — снова пароль; неверный код — повторить код.
+      if (e instanceof ApiError && e.status === 401 && e.code !== 'MFA_INVALID_CODE') { setMfa(false); setPassword(''); }
+      setMessage(e instanceof ApiError && e.status === 429 ? e.message : t('login.invalidCode'));
       setBusy(false);
     }
   }
 
-  const title = context === 'platform' ? 'Администрирование платформы' : companyName ? `Вход в ${companyName}` : 'Вход в CRM';
+  const title = context === 'platform' ? t('login.titlePlatform') : companyName ? t('login.titleCompany', { company: companyName }) : t('login.title');
+  const header = <div className="flex items-center justify-between gap-3"><Brand /><LanguageSwitcher /></div>;
   if (mfa) {
     return (
       <Centered>
-        <Brand />
-        <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight">Код подтверждения</h1>
-        <p className="mb-6 text-sm text-slate-600">Введите 6-значный код из приложения-аутентификатора или один из кодов восстановления.</p>
+        {header}
+        <h1 className="mb-2 mt-3 text-2xl font-semibold tracking-tight">{t('login.mfaTitle')}</h1>
+        <p className="mb-6 text-sm text-slate-600">{t('login.mfaText')}</p>
         <Card>
           <form onSubmit={submitCode} className="space-y-4">
             {message && <Notice>{message}</Notice>}
-            <Field label="Код" autoComplete="one-time-code" required maxLength={16} value={code} onChange={e => setCode(e.target.value)} />
-            <Button type="submit" disabled={busy}>{busy ? 'Проверка…' : 'Подтвердить'}</Button>
+            <Field label={t('login.code')} autoComplete="one-time-code" required maxLength={16} value={code} onChange={e => setCode(e.target.value)} />
+            <Button type="submit" disabled={busy}>{busy ? t('common.checking') : t('common.confirm')}</Button>
           </form>
         </Card>
       </Centered>
@@ -92,29 +92,29 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
   }
   return (
     <Centered>
-      <Brand />
+      {header}
       <h1 className="mb-6 mt-3 text-2xl font-semibold tracking-tight">{title}</h1>
       <Card>
         <form onSubmit={submit} className="space-y-4">
           {message && <Notice>{message}</Notice>}
-          <Field label="Email" type="email" name="email" autoComplete="username" required maxLength={320} value={email} onChange={e => setEmail(e.target.value)} />
-          <Field label="Пароль" type="password" name="password" autoComplete="current-password" required maxLength={1024} value={password} onChange={e => setPassword(e.target.value)} />
-          <Button type="submit" disabled={busy}>{busy ? 'Вход…' : 'Войти'}</Button>
+          <Field label={t('common.email')} type="email" name="email" autoComplete="username" required maxLength={320} value={email} onChange={e => setEmail(e.target.value)} />
+          <Field label={t('common.password')} type="password" name="password" autoComplete="current-password" required maxLength={1024} value={password} onChange={e => setPassword(e.target.value)} />
+          <Button type="submit" disabled={busy}>{busy ? t('common.signingIn') : t('common.signIn')}</Button>
         </form>
         {google && (
           <>
-            <div className="my-4 flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />или<span className="h-px flex-1 bg-slate-200" /></div>
+            <div className="my-4 flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />{t('common.or')}<span className="h-px flex-1 bg-slate-200" /></div>
             <a href={'/api/auth/google' + (tenant ? `?tenant=${encodeURIComponent(tenant)}` : '')}
               className="block w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-center text-sm font-medium text-slate-800 hover:bg-slate-50">
-              Войти через Google
+              {t('login.google')}
             </a>
           </>
         )}
       </Card>
       {context === 'app' && (
         <>
-          <Link href="/reset-password" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">Забыли пароль?</Link>
-          <p className="mt-4 text-xs leading-5 text-slate-500">Регистрации нет: доступ даёт приглашение от администратора вашей компании.</p>
+          <Link href="/reset-password" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">{t('login.forgot')}</Link>
+          <p className="mt-4 text-xs leading-5 text-slate-500">{t('login.noSignup')}</p>
         </>
       )}
     </Centered>

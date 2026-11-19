@@ -1,4 +1,5 @@
 import { HttpException, Injectable } from '@nestjs/common';
+import { t } from '../i18n.js';
 import type { Response } from 'express';
 import { AuthStore } from '../database/auth-store.service.js';
 import { THROTTLE_MAX_FAILED_PER_EMAIL, THROTTLE_MAX_PER_IP, THROTTLE_WINDOW_MS } from './auth.constants.js';
@@ -27,7 +28,7 @@ export class ThrottleService {
     const failed = await this.store.throttleCount(keys.account, THROTTLE_WINDOW_MS);
     if (perIp > THROTTLE_MAX_PER_IP || failed >= THROTTLE_MAX_FAILED_PER_EMAIL) {
       res.setHeader('Retry-After', String(Math.round(THROTTLE_WINDOW_MS / 1000)));
-      throw new HttpException({ message: 'Слишком много попыток входа. Попробуйте позже.', statusCode: 429 }, 429);
+      throw new HttpException({ message: t('err.tooManyLogins'), statusCode: 429 }, 429);
     }
   }
 

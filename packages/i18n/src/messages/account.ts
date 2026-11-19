@@ -1,0 +1,137 @@
+import type { Entry } from '../entry.js';
+
+/** Вход, выбор компании, пароль, восстановление, второй фактор, приглашение. */
+export const account = {
+  'login.titlePlatform': { de: 'Plattform-Administration', en: 'Platform administration', ru: 'Администрирование платформы' },
+  'login.titleCompany': { de: 'Anmeldung bei {company}', en: 'Sign in to {company}', ru: 'Вход в {company}' },
+  'login.title': { de: 'Anmeldung beim CRM', en: 'Sign in to the CRM', ru: 'Вход в CRM' },
+  'login.googleFailed': {
+    de: 'Die Anmeldung mit Google ist fehlgeschlagen. Sie ist nur für ein bestehendes Konto mit bestätigter E-Mail-Adresse möglich.',
+    en: 'Google sign-in failed. It is only possible for an existing account with a verified email address.',
+    ru: 'Не удалось войти через Google. Вход возможен только для существующего аккаунта с подтверждённым email.',
+  },
+  'login.invalidCredentials': { de: 'E-Mail oder Passwort ist falsch', en: 'Incorrect email or password', ru: 'Неверный email или пароль' },
+  'login.mfaTitle': { de: 'Bestätigungscode', en: 'Verification code', ru: 'Код подтверждения' },
+  'login.mfaText': {
+    de: 'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App oder einen Ihrer Wiederherstellungscodes ein.',
+    en: 'Enter the 6-digit code from your authenticator app or one of your recovery codes.',
+    ru: 'Введите 6-значный код из приложения-аутентификатора или один из кодов восстановления.',
+  },
+  'login.code': { de: 'Code', en: 'Code', ru: 'Код' },
+  'login.invalidCode': {
+    de: 'Der Code ist falsch. Wenn die Zeit abgelaufen ist, melden Sie sich erneut an.',
+    en: 'Incorrect code. If the time has run out, sign in again.',
+    ru: 'Неверный код. Если время вышло — войдите заново.',
+  },
+  'login.google': { de: 'Mit Google anmelden', en: 'Sign in with Google', ru: 'Войти через Google' },
+  'login.forgot': { de: 'Passwort vergessen?', en: 'Forgot your password?', ru: 'Забыли пароль?' },
+  'login.noSignup': {
+    de: 'Eine Registrierung gibt es nicht: Zugang erhalten Sie über eine Einladung des Administrators Ihres Unternehmens.',
+    en: 'There is no sign-up: access is granted by an invitation from your company administrator.',
+    ru: 'Регистрации нет: доступ даёт приглашение от администратора вашей компании.',
+  },
+
+  'app.chooseCompany': { de: 'Unternehmen auswählen', en: 'Choose a company', ru: 'Выберите компанию' },
+  'app.noAccess': { de: 'Sie haben keinen Zugriff auf dieses Unternehmen.', en: 'You do not have access to this company.', ru: 'У вас нет доступа к этой компании.' },
+  'app.noCompanies': {
+    de: 'Keine verfügbaren Unternehmen. Wenden Sie sich an den Administrator Ihres Unternehmens.',
+    en: 'No companies available. Contact your company administrator.',
+    ru: 'Нет доступных компаний. Обратитесь к администратору вашей компании.',
+  },
+  'app.changePassword': { de: 'Passwort ändern', en: 'Change password', ru: 'Сменить пароль' },
+
+  'password.title': { de: 'Passwort ändern', en: 'Change password', ru: 'Смена пароля' },
+  'password.titleForced': { de: 'Legen Sie Ihr Passwort fest', en: 'Set your password', ru: 'Задайте свой пароль' },
+  'password.forcedText': {
+    de: 'Sie haben sich mit einem temporären Passwort angemeldet. Legen Sie ein dauerhaftes fest – das temporäre wird dann ungültig.',
+    en: 'You signed in with a temporary password. Choose a permanent one — the temporary password will stop working.',
+    ru: 'Вы вошли временным паролем. Придумайте постоянный — временный перестанет действовать.',
+  },
+  'password.temporary': { de: 'Temporäres Passwort', en: 'Temporary password', ru: 'Временный пароль' },
+  'password.current': { de: 'Aktuelles Passwort', en: 'Current password', ru: 'Текущий пароль' },
+  'password.new': { de: 'Neues Passwort (mindestens 12 Zeichen)', en: 'New password (at least 12 characters)', ru: 'Новый пароль (не меньше 12 символов)' },
+  'password.withMin': { de: 'Passwort (mindestens 12 Zeichen)', en: 'Password (at least 12 characters)', ru: 'Пароль (не меньше 12 символов)' },
+  'password.repeatNew': { de: 'Neues Passwort wiederholen', en: 'Repeat the new password', ru: 'Повторите новый пароль' },
+  'password.repeat': { de: 'Passwort wiederholen', en: 'Repeat the password', ru: 'Повторите пароль' },
+  'password.save': { de: 'Passwort speichern', en: 'Save password', ru: 'Сохранить пароль' },
+  'password.mismatchNew': { de: 'Die neuen Passwörter stimmen nicht überein', en: 'The new passwords do not match', ru: 'Новые пароли не совпадают' },
+  'password.mismatch': { de: 'Die Passwörter stimmen nicht überein', en: 'The passwords do not match', ru: 'Пароли не совпадают' },
+  'password.changed': {
+    de: 'Passwort geändert. Andere Geräte wurden abgemeldet.',
+    en: 'Password changed. Other devices have been signed out.',
+    ru: 'Пароль изменён. Другие устройства вышли из системы.',
+  },
+  'password.failed': { de: 'Das Passwort konnte nicht geändert werden', en: 'The password could not be changed', ru: 'Не удалось изменить пароль' },
+
+  'reset.title': { de: 'Passwort zurücksetzen', en: 'Reset your password', ru: 'Восстановление пароля' },
+  'reset.sent': {
+    de: 'Falls ein solches Konto existiert, haben wir eine E-Mail mit einem Link an {email} gesendet. Der Link ist 1 Stunde gültig.',
+    en: 'If such an account exists, we have sent an email with a link to {email}. The link is valid for 1 hour.',
+    ru: 'Если такой аккаунт есть, мы отправили на {email} письмо со ссылкой. Она действует 1 час.',
+  },
+  'reset.send': { de: 'Link senden', en: 'Send link', ru: 'Отправить ссылку' },
+  'reset.requestFailed': { de: 'Die Anfrage konnte nicht gesendet werden', en: 'The request could not be sent', ru: 'Не удалось отправить запрос' },
+  'reset.toLogin': { de: 'Zur Anmeldung', en: 'Back to sign in', ru: 'Ко входу' },
+  'reset.newTitle': { de: 'Neues Passwort', en: 'New password', ru: 'Новый пароль' },
+  'reset.done': {
+    de: 'Passwort geändert. Alle bisherigen Sitzungen wurden beendet.',
+    en: 'Password changed. All previous sessions have been ended.',
+    ru: 'Пароль изменён. Все прежние сеансы завершены.',
+  },
+
+  'mfa.title': { de: 'Zwei-Faktor-Authentifizierung', en: 'Two-factor authentication', ru: 'Второй фактор входа' },
+  'mfa.text': {
+    de: 'Scannen Sie den QR-Code mit einer Authenticator-App (Google Authenticator, Microsoft Authenticator, 1Password u. a.) und geben Sie den 6-stelligen Code ein.',
+    en: 'Scan the QR code with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, etc.) and enter the 6-digit code.',
+    ru: 'Отсканируйте QR-код в приложении-аутентификаторе (Google Authenticator, Microsoft Authenticator, 1Password и др.) и введите 6-значный код.',
+  },
+  'mfa.qrLabel': { de: 'QR-Code für die Authenticator-App', en: 'QR code for the authenticator app', ru: 'QR-код для приложения-аутентификатора' },
+  'mfa.cantScan': { de: 'QR-Code lässt sich nicht scannen?', en: 'Can’t scan the QR code?', ru: 'Не получается отсканировать?' },
+  'mfa.manualKey': { de: 'Geben Sie den Schlüssel manuell ein:', en: 'Enter the key manually:', ru: 'Введите ключ вручную:' },
+  'mfa.appCode': { de: 'Code aus der App', en: 'Code from the app', ru: 'Код из приложения' },
+  'mfa.preparing': { de: 'Wird vorbereitet…', en: 'Preparing…', ru: 'Подготовка…' },
+  'mfa.startFailed': {
+    de: 'Die Einrichtung konnte nicht gestartet werden. Bitte laden Sie die Seite neu.',
+    en: 'Setup could not be started. Please reload the page.',
+    ru: 'Не удалось начать настройку. Обновите страницу.',
+  },
+  'mfa.confirmFailed': { de: 'Der Code konnte nicht bestätigt werden', en: 'The code could not be confirmed', ru: 'Не удалось подтвердить код' },
+  'mfa.recoveryTitle': { de: 'Wiederherstellungscodes', en: 'Recovery codes', ru: 'Коды восстановления' },
+  'mfa.recoveryText': {
+    de: 'Bewahren Sie sie an einem sicheren Ort auf. Jeder Code funktioniert einmal, wenn Ihr Telefon nicht verfügbar ist. Sie werden nicht noch einmal angezeigt.',
+    en: 'Keep them somewhere safe. Each code works once if your phone is unavailable. They will not be shown again.',
+    ru: 'Сохраните их в надёжном месте. Каждый код подходит один раз, если телефон недоступен. Больше они показаны не будут.',
+  },
+  'mfa.savedCodes': { de: 'Ich habe die Codes gespeichert', en: 'I have saved the codes', ru: 'Я сохранил коды' },
+
+  'invite.title': { de: 'Einladung', en: 'Invitation', ru: 'Приглашение' },
+  'invite.titleCompany': { de: 'Einladung zu {company}', en: 'Invitation to {company}', ru: 'Приглашение в {company}' },
+  'invite.invalid': {
+    de: 'Der Link ist ungültig oder abgelaufen. Bitten Sie den Administrator des Unternehmens, die Einladung erneut zu senden.',
+    en: 'The link is invalid or has expired. Ask the company administrator to send the invitation again.',
+    ru: 'Ссылка недействительна или устарела. Попросите администратора компании отправить приглашение ещё раз.',
+  },
+  'invite.asAdmin': { de: 'Sie werden als Administrator eingeladen', en: 'You are invited as an administrator', ru: 'Вас приглашают администратором' },
+  'invite.asManager': { de: 'Sie werden als Mitarbeiter eingeladen', en: 'You are invited as a manager', ru: 'Вас приглашают менеджером' },
+  'invite.accept': { de: 'Einladung annehmen', en: 'Accept invitation', ru: 'Принять приглашение' },
+  'invite.signedInAs': {
+    de: 'Sie sind als {who} angemeldet, die Einladung wurde aber an {email} gesendet.',
+    en: 'You are signed in as {who}, but the invitation was sent to {email}.',
+    ru: 'Вы вошли как {who}, а приглашение отправлено на {email}.',
+  },
+  'invite.signOutContinue': { de: 'Abmelden und fortfahren', en: 'Sign out and continue', ru: 'Выйти и продолжить' },
+  'invite.hasAccount': {
+    de: 'Sie haben bereits ein Konto. Melden Sie sich an, um die Einladung anzunehmen.',
+    en: 'You already have an account. Sign in to accept the invitation.',
+    ru: 'У вас уже есть аккаунт. Войдите, чтобы принять приглашение.',
+  },
+  'invite.yourName': { de: 'Ihr Name', en: 'Your name', ru: 'Ваше имя' },
+  'invite.acceptAndSignIn': { de: 'Annehmen und anmelden', en: 'Accept and sign in', ru: 'Принять и войти' },
+  'invite.google': { de: 'Mit Google annehmen', en: 'Accept with Google', ru: 'Принять через Google' },
+  'invite.googleFailed': {
+    de: 'Die Einladung konnte nicht mit Google angenommen werden: Die E-Mail-Adresse des Google-Kontos muss mit der Adresse der Einladung übereinstimmen.',
+    en: 'The invitation could not be accepted with Google: the Google account’s email address must match the invitation address.',
+    ru: 'Не удалось принять приглашение через Google: email Google-аккаунта должен совпадать с адресом приглашения.',
+  },
+  'invite.acceptFailed': { de: 'Die Einladung konnte nicht angenommen werden', en: 'The invitation could not be accepted', ru: 'Не удалось принять приглашение' },
+} satisfies Record<string, Entry>;
