@@ -6,5 +6,5 @@ import { currentSite } from '../../../lib/site';
 export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
   const site = await currentSite();
   if (site.kind !== 'tenant') notFound();
-  return <TenantHome baseDomain={site.baseDomain} section="lead" leadId={(await params).id} />;
+  return <TenantHome hosting={site.hosting} section="lead" leadId={(await params).id} />;
 }

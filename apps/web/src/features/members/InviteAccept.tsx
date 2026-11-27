@@ -1,5 +1,6 @@
 'use client';
 
+import { type Hosting } from '@modulyn/contracts';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { InvitationAcceptResponse, InvitationInspectResponse } from '@modulyn/contracts';
 import { Brand, Button, Card, Centered, Field, Loading, Notice } from '../../components/ui';
@@ -32,7 +33,7 @@ function forget() {
  * Принятие приглашения (5.2, C2) на app.<домен>. Страница открывается на языке приглашения (Phase 10, I4);
  * новый аккаунт получает язык, на котором человек принял приглашение.
  */
-export function InviteAccept({ baseDomain, error }: { baseDomain: string; error?: string | undefined }) {
+export function InviteAccept({ hosting, error }: { hosting: Hosting; error?: string | undefined }) {
   const { t, locale, setLocale } = useI18n();
   const [token, setToken] = useState<string | null>(null);
   const [info, setInfo] = useState<InvitationInspectResponse | null>(null);
@@ -63,7 +64,7 @@ export function InviteAccept({ baseDomain, error }: { baseDomain: string; error?
 
   function enterCompany(slug: string) {
     forget();
-    window.location.href = originOf(slug, baseDomain) + '/api/auth/handoff/start';
+    window.location.href = originOf(slug, hosting) + '/api/auth/handoff/start';
   }
 
   async function act(action: () => Promise<void>) {
@@ -126,7 +127,7 @@ export function InviteAccept({ baseDomain, error }: { baseDomain: string; error?
         ) : info.accountExists ? (
           <div className="space-y-4 text-sm">
             <p>{t('invite.hasAccount')}</p>
-            <a href="/login?next=invite" className="block w-full rounded-md bg-teal-800 px-4 py-2 text-center font-medium text-white hover:bg-teal-900">{t('common.signIn')}</a>
+            <a href="/login?next=invite" className="block w-full rounded-md bg-brand px-4 py-2 text-center font-medium text-white hover:bg-brand-dark">{t('common.signIn')}</a>
           </div>
         ) : (
           <>

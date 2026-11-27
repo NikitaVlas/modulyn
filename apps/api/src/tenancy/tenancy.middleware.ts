@@ -31,7 +31,7 @@ export class TenancyMiddleware {
   readonly handle = (req: Request, res: Response, next: NextFunction): void => {
     if (isHealthPath(req.path)) { next(); return; }
     const host = this.originalHost(req);
-    const resolution = resolveHost(host, this.config.appBaseDomain);
+    const resolution = resolveHost(host, this.config.hosting);
     // Язык до входа (Phase 10, I2): cookie, выбранный в переключателе; после входа guard заменит его языком аккаунта.
     const locale = toLocale(parseCookies(req.headers.cookie).get(LOCALE_COOKIE));
     const meta = { host: (host ?? '').toLowerCase(), ip: this.clientIp(req), locale };

@@ -12,7 +12,7 @@ import { LEAD_STATUSES } from './LeadsSummary';
 
 export const STATUS_STYLE: Record<LeadStatus, string> = {
   NEW: 'bg-sky-50 text-sky-800', IN_PROGRESS: 'bg-amber-50 text-amber-800', CONTACTED: 'bg-violet-50 text-violet-800',
-  CONVERTED: 'bg-teal-50 text-teal-800', CLOSED: 'bg-slate-100 text-slate-600',
+  CONVERTED: 'bg-brand-soft text-brand', CLOSED: 'bg-slate-100 text-slate-600',
 };
 
 /** Статус одной заявки (в сводке и фильтрах — множественное число, здесь — единственное). */
@@ -82,14 +82,14 @@ export function LeadsList({ query }: { query: LeadsQuery }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{t('leads.title')}</h1>
-        <Link href="/leads/new" className="rounded-md bg-teal-800 px-4 py-2 text-sm font-medium text-white hover:bg-teal-900">{t('leads.new')}</Link>
+        <Link href="/leads/new" className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark">{t('leads.new')}</Link>
       </div>
 
       <div className="mb-4 space-y-3 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap gap-2" role="group" aria-label={t('leads.statusFilter')}>
           {LEAD_STATUSES.map(s => (
             <button key={s} type="button" aria-pressed={selected.has(s)} onClick={() => toggleStatus(s)}
-              className={`rounded-full border px-3 py-1 text-sm ${selected.has(s) ? 'border-teal-800 bg-teal-800 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
+              className={`rounded-full border px-3 py-1 text-sm ${selected.has(s) ? 'border-brand bg-brand text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'}`}>
               {t(`leadStatuses.${s}` as const)}
             </button>
           ))}
@@ -136,7 +136,7 @@ export function LeadsList({ query }: { query: LeadsQuery }) {
               <tbody className="divide-y divide-slate-100">
                 {data.items.map(l => (
                   <tr key={l.id} className="cursor-pointer hover:bg-slate-50" onClick={() => router.push(`/leads/${l.id}`)}>
-                    <td className="px-4 py-3 font-medium"><Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:text-teal-800">{l.name}</Link></td>
+                    <td className="px-4 py-3 font-medium"><Link href={`/leads/${l.id}`} onClick={e => e.stopPropagation()} className="hover:text-brand">{l.name}</Link></td>
                     <td className="px-4 py-3 text-slate-600">{l.email ?? l.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{sourceLabel(t, l.source, l.sourceDetail)}</td>
                     <td className="px-4 py-3"><StatusBadge status={l.status} /></td>

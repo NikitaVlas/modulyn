@@ -55,7 +55,7 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
   }
 
   if (missing) {
-    return <div><Notice>{t('leads.notFound')}</Notice><Link href="/leads" className="mt-4 inline-block text-sm text-teal-800">{t('leads.backToAll')}</Link></div>;
+    return <div><Notice>{t('leads.notFound')}</Notice><Link href="/leads" className="mt-4 inline-block text-sm text-brand">{t('leads.backToAll')}</Link></div>;
   }
   if (!lead) return message ? <Notice tone={message.tone}>{message.text}</Notice> : <p className="text-sm text-slate-500">{t('common.loading')}</p>;
 
@@ -63,7 +63,7 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
       <div className="space-y-6">
         <div>
-          <Link href="/leads" className="text-sm text-teal-800 hover:underline">{t('leads.backToAll')}</Link>
+          <Link href="/leads" className="text-sm text-brand hover:underline">{t('leads.backToAll')}</Link>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight">{lead.name}</h1>
             <StatusBadge status={lead.status} />
@@ -72,8 +72,8 @@ export function LeadCard({ id, role }: { id: string; role: TenantRole }) {
         </div>
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
         <dl className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 text-sm sm:grid-cols-2">
-          <div><dt className="text-slate-500">{t('common.email')}</dt><dd className="mt-1">{lead.email ? <a href={`mailto:${lead.email}`} className="text-teal-800 hover:underline">{lead.email}</a> : '—'}</dd></div>
-          <div><dt className="text-slate-500">{t('common.phone')}</dt><dd className="mt-1">{lead.phone ? <a href={`tel:${lead.phone.replace(/\s/g, '')}`} className="text-teal-800 hover:underline">{lead.phone}</a> : '—'}</dd></div>
+          <div><dt className="text-slate-500">{t('common.email')}</dt><dd className="mt-1">{lead.email ? <a href={`mailto:${lead.email}`} className="text-brand hover:underline">{lead.email}</a> : '—'}</dd></div>
+          <div><dt className="text-slate-500">{t('common.phone')}</dt><dd className="mt-1">{lead.phone ? <a href={`tel:${lead.phone.replace(/\s/g, '')}`} className="text-brand hover:underline">{lead.phone}</a> : '—'}</dd></div>
           <div className="sm:col-span-2"><dt className="text-slate-500">{t('leads.message')}</dt><dd className="mt-1 whitespace-pre-wrap">{lead.message ?? '—'}</dd></div>
         </dl>
         <section>

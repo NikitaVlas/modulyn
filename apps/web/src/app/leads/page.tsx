@@ -11,5 +11,5 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const params = await searchParams;
   const query = Object.fromEntries(KEYS.map(k => [k, firstParam(params[k])]));
   // ?deleted=1 — переход после удаления заявки (Phase 9, F6): показать подтверждение; в запрос к API не передаётся.
-  return <TenantHome baseDomain={site.baseDomain} section="leads" leadsQuery={query} leadDeleted={firstParam(params.deleted) === '1'} />;
+  return <TenantHome hosting={site.hosting} section="leads" leadsQuery={query} leadDeleted={firstParam(params.deleted) === '1'} />;
 }

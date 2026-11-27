@@ -1,5 +1,6 @@
 'use client';
 
+import { type Hosting } from '@modulyn/contracts';
 import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -10,7 +11,7 @@ import { ApiError, api, originOf, post } from './api';
 
 interface Props {
   context: 'app' | 'platform';
-  baseDomain: string;
+  hosting: Hosting;
   /** Компания, из которой пришёл пользователь (?tenant=nova): после входа переход сразу в неё. */
   tenant?: string | undefined;
   error?: string | undefined;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 /** Страница входа app.<домен> (пользователи) и admin.<домен> (платформа). Пароль вводится только здесь (A5). */
-export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Props) {
+export function LoginForm({ context, hosting, tenant, error, returnTo }: Props) {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,7 +39,7 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
       .then(info => setCompanyName(info.displayName), () => undefined);
   }, [context, tenant]);
 
-  const next = () => (returnTo === 'invite' ? '/invite' : tenant ? originOf(tenant, baseDomain) + '/api/auth/handoff/start' : '/');
+  const next = () => (returnTo === 'invite' ? '/invite' : tenant ? originOf(tenant, hosting) + '/api/auth/handoff/start' : '/');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -113,7 +114,7 @@ export function LoginForm({ context, baseDomain, tenant, error, returnTo }: Prop
       </Card>
       {context === 'app' && (
         <>
-          <Link href="/reset-password" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">{t('login.forgot')}</Link>
+          <Link href="/reset-password" className="mt-4 block text-center text-sm text-slate-600 hover:text-brand">{t('login.forgot')}</Link>
           <p className="mt-4 text-xs leading-5 text-slate-500">{t('login.noSignup')}</p>
         </>
       )}

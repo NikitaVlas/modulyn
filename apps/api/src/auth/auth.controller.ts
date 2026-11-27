@@ -500,7 +500,7 @@ export class AuthController {
     if (!user || !user.isActive) return;
     const token = this.tokens.randomToken();
     await this.store.createPasswordReset(user.id, this.tokens.hash(token), new Date(Date.now() + 60 * 60_000));
-    await this.mail.send(passwordResetMail({ to: email, link: `${this.appOrigin}/reset-password#${token}`, locale: user.locale }));
+    await this.mail.send(passwordResetMail({ to: email, link: `${this.appOrigin}/reset-password#${token}`, locale: user.locale, brand: this.env.brand }));
   }
 
   /** Новый пароль по ссылке: одноразово, 1 час; после смены все сессии человека завершаются. */

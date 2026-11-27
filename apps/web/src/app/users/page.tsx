@@ -6,5 +6,5 @@ import { currentSite } from '../../lib/site';
 export default async function UsersPage() {
   const site = await currentSite();
   if (site.kind !== 'tenant') notFound();
-  return <TenantHome baseDomain={site.baseDomain} section="users" />;
+  return <TenantHome hosting={site.hosting} section="users" />;
 }

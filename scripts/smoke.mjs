@@ -23,7 +23,9 @@ function request(path, host = origin.host, { method = 'GET', headers = {}, body 
 const cookiesOf = res => (res.headers['set-cookie'] ?? []).map(c => c.split(';')[0]).filter(c => !c.endsWith('=')).join('; ');
 const page = await request('/');
 assert.equal(page.status, 200);
-assert.match(page.body, /MODULYN/);
+// Phase 11 (E4): бренд установки настраивается — проверяем, что он отрисован (название во вкладке и цвет), а не конкретное слово.
+assert.match(page.body, /<title>[^<]{1,60}<\/title>/);
+assert.match(page.body, /--brand:#[0-9a-f]{6}/i);
 // Phase 9.2: страницы интерфейса нельзя встроить в чужой сайт (clickjacking).
 assert.equal(page.headers['x-frame-options'], 'DENY', 'page frame protection');
 assert.match(page.headers['content-security-policy'] ?? '', /frame-ancestors 'none'/);

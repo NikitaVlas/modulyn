@@ -1,3 +1,6 @@
+import { hostFor, parseHosting, type Hosting } from '@modulyn/contracts';
+
+export interface MailBrand { name: string; color: string }
 export interface GoogleConfig {
   clientId: string;
   clientSecret: string;
@@ -11,6 +14,10 @@ export interface Environment {
   nodeEnv: 'development' | 'test' | 'production';
   /** Базовый домен, под которым живут поддомены компаний: localhost локально, modulyn.app в production. */
   appBaseDomain: string;
+  /** Phase 11 (E2): адреса установки — «метка + домен» или явные адреса выделенной установки у клиента. */
+  hosting: Hosting;
+  /** Phase 11 (E4): бренд установки для писем (BRAND_NAME, BRAND_COLOR). */
+  brand: MailBrand;
   /**
    * Только для pnpm dev: Next.js dev-сервер проксирует /api на 127.0.0.1:3001 и подменяет Host,
    * а исходный Host передаёт в X-Forwarded-Host. В production флаг запрещён: там Host сохраняет nginx.
@@ -66,6 +73,11 @@ export function parseEnvironment(env: NodeJS.ProcessEnv): Environment {
   if (publicScheme !== 'http' && publicScheme !== 'https') throw new Error('PUBLIC_SCHEME must be http or https');
   // Без https cookies нельзя пометить Secure: допустимо только на локальной машине.
   if (publicScheme === 'http' && !localOnly) throw new Error('PUBLIC_SCHEME=http is allowed only with APP_BASE_DOMAIN=localhost');
+  const hosting = parseHosting(env);
+  if (publicScheme === 'http' && hosting.explicit) {
+    const hosts = [hosting.explicit.app, hosting.explicit.platform, ...Object.keys(hosting.explicit.tenants)];
+    if (!hosts.every(h => h === 'localhost' || h.endsWith('.localhost'))) throw new Error('PUBLIC_SCHEME=http is allowed only for *.localhost hosts');
+  }
   let publicPort: number | undefined;
   if (env.PUBLIC_PORT) {
     if (!/^\d+$/.test(env.PUBLIC_PORT) || Number(env.PUBLIC_PORT) < 1 || Number(env.PUBLIC_PORT) > 65535) throw new Error('PUBLIC_PORT must be a port number');
@@ -101,12 +113,15 @@ export function parseEnvironment(env: NodeJS.ProcessEnv): Environment {
     if (!['smtp:', 'smtps:', 'memory:'].includes(protocol)) throw new Error('SMTP_URL must be smtp://, smtps:// or memory:');
     if (protocol === 'memory:' && nodeEnv === 'production') throw new Error('SMTP_URL=memory: is not allowed in production');
   }
-  const mailFrom = env.MAIL_FROM || `Modulyn <no-reply@${appBaseDomain === 'localhost' ? 'modulyn.localhost' : appBaseDomain}>`;
+  // Phase 11 (E4): бренд установки — название продукта и цвет в письмах; неверные значения — Modulyn.
+  const brandName = (env.BRAND_NAME ?? '').replace(/[\r\n<>"]/g, '').trim().slice(0, 60) || 'Modulyn';
+  const brandColor = /^#[0-9a-f]{6}$/i.test(env.BRAND_COLOR ?? '') ? env.BRAND_COLOR! : '#115e59';
+  const mailFrom = env.MAIL_FROM || `${brandName} <no-reply@${appBaseDomain === 'localhost' ? 'modulyn.localhost' : appBaseDomain}>`;
   if (/[\r\n]/.test(mailFrom) || mailFrom.length > 200) throw new Error('MAIL_FROM is invalid');
 
   return {
-    port, databaseUrl: env.DATABASE_URL, nodeEnv: nodeEnv as Environment['nodeEnv'], appBaseDomain, trustDevProxyHost,
-    trustProxy, publicScheme, publicPort, jwtSecrets, google, totpKey, smtpUrl, mailFrom,
+    port, databaseUrl: env.DATABASE_URL, nodeEnv: nodeEnv as Environment['nodeEnv'], appBaseDomain, hosting, trustDevProxyHost,
+    trustProxy, publicScheme, publicPort, jwtSecrets, google, totpKey, smtpUrl, mailFrom, brand: { name: brandName, color: brandColor },
   };
 }
 
@@ -114,5 +129,5 @@ export function parseEnvironment(env: NodeJS.ProcessEnv): Environment {
 export function originFor(env: Environment, label: string): string {
   const port = env.publicPort && !((env.publicScheme === 'http' && env.publicPort === 80) || (env.publicScheme === 'https' && env.publicPort === 443))
     ? ':' + env.publicPort : '';
-  return `${env.publicScheme}://${label}.${env.appBaseDomain}${port}`;
+  return `${env.publicScheme}://${hostFor(env.hosting, label)}${port}`;
 }

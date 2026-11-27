@@ -1,5 +1,6 @@
 'use client';
 
+import { hostFor, type Hosting } from '@modulyn/contracts';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { CreateTenantResponse, InvitationSentResponse, ModuleKey, PlatformTenant, PlatformTenantModule } from '@modulyn/contracts';
 import { Button, Field, Notice } from '../../components/ui';
@@ -7,7 +8,7 @@ import { useI18n } from '../../i18n/client';
 import { ApiError, api, originOf, post } from '../auth/api';
 
 const STATUS_STYLE: Record<PlatformTenant['status'], string> = {
-  ACTIVE: 'bg-teal-50 text-teal-800',
+  ACTIVE: 'bg-brand-soft text-brand',
   SUSPENDED: 'bg-slate-100 text-slate-600',
 };
 
@@ -20,7 +21,7 @@ function useErrorText() {
  * Компании платформы (4.2–4.4): список, создание с первым администратором, названия, отключение и включение.
  * Администратор платформы видит только настройки компаний и число участников — без лидов и персональных данных (B6).
  */
-export function TenantsAdmin({ baseDomain }: { baseDomain: string }) {
+export function TenantsAdmin({ hosting }: { hosting: Hosting }) {
   const { t, date } = useI18n();
   const errorText = useErrorText();
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
@@ -43,9 +44,9 @@ export function TenantsAdmin({ baseDomain }: { baseDomain: string }) {
         {!creating && <div className="w-56"><Button onClick={() => { setCreating(true); setCreated(null); setSelected(null); }}>{t('platform.newCompany')}</Button></div>}
       </div>
       {error && <div className="mb-4"><Notice>{error}</Notice></div>}
-      {created && <CreatedNotice result={created} baseDomain={baseDomain} onClose={() => setCreated(null)} />}
+      {created && <CreatedNotice result={created} hosting={hosting} onClose={() => setCreated(null)} />}
       {creating && <CreateForm onCancel={() => setCreating(false)} onCreated={r => { setCreating(false); setCreated(r); reload(); }} />}
-      {current && <TenantDetails tenant={current} baseDomain={baseDomain} onClose={() => setSelected(null)} onChanged={reload} />}
+      {current && <TenantDetails tenant={current} hosting={hosting} onClose={() => setSelected(null)} onChanged={reload} />}
 
       {!tenants ? <p className="text-sm text-slate-500">{t('common.loading')}</p> : tenants.length === 0 ? (
         <p className="text-sm text-slate-600">{t('platform.noCompanies')}</p>
@@ -62,7 +63,7 @@ export function TenantsAdmin({ baseDomain }: { baseDomain: string }) {
               {tenants.map(x => (
                 <tr key={x.id} className="cursor-pointer hover:bg-slate-50" onClick={() => { setSelected(x.id); setCreating(false); }}>
                   <td className="px-4 py-3"><p className="font-medium">{x.displayName}</p><p className="text-xs text-slate-500">{x.name}</p></td>
-                  <td className="px-4 py-3 font-mono text-xs">{x.slug}.{baseDomain}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{hostFor(hosting, x.slug)}</td>
                   <td className="px-4 py-3"><span className={`rounded px-2 py-0.5 text-xs ${STATUS_STYLE[x.status]}`}>{t(`platform.status.${x.status}` as const)}</span></td>
                   <td className="px-4 py-3">{x.activeMembers}</td>
                   <td className="px-4 py-3 text-slate-600">{date(x.createdAt)}</td>
@@ -123,11 +124,11 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
 }
 
 /** C3: первый администратор получает приглашение по email; пароль платформа больше не видит и не передаёт. */
-function CreatedNotice({ result, baseDomain, onClose }: { result: CreateTenantResponse; baseDomain: string; onClose: () => void }) {
+function CreatedNotice({ result, hosting, onClose }: { result: CreateTenantResponse; hosting: Hosting; onClose: () => void }) {
   const { t } = useI18n();
   return (
     <Panel title={t('platform.createdTitle', { name: result.tenant.displayName })}>
-      <p className="text-sm text-slate-700">{t('platform.address')} <span className="font-mono">{originOf(result.tenant.slug, baseDomain)}</span></p>
+      <p className="text-sm text-slate-700">{t('platform.address')} <span className="font-mono">{originOf(result.tenant.slug, hosting)}</span></p>
       <div className="mt-4">
         {result.invitationSent
           ? <Notice tone="info">{t('platform.inviteSent', { email: result.firstAdmin.email })}</Notice>
@@ -218,7 +219,7 @@ function InviteAdmin({ tenant }: { tenant: PlatformTenant }) {
   );
 }
 
-function TenantDetails({ tenant, baseDomain, onClose, onChanged }: { tenant: PlatformTenant; baseDomain: string; onClose: () => void; onChanged: () => void }) {
+function TenantDetails({ tenant, hosting, onClose, onChanged }: { tenant: PlatformTenant; hosting: Hosting; onClose: () => void; onChanged: () => void }) {
   const { t } = useI18n();
   const errorText = useErrorText();
   const [name, setName] = useState(tenant.name);
@@ -253,7 +254,7 @@ function TenantDetails({ tenant, baseDomain, onClose, onChanged }: { tenant: Pla
         <Field label={t('platform.legalName')} required maxLength={200} value={name} onChange={e => setName(e.target.value)} />
         <Field label={t('platform.displayName')} required maxLength={200} value={displayName} onChange={e => setDisplayName(e.target.value)} />
         <p className="text-sm text-slate-600 sm:col-span-2">
-          {t('platform.details', { subdomain: `${tenant.slug}.${baseDomain}`, members: tenant.activeMembers, status: t(`platform.status.${tenant.status}` as const) })}
+          {t('platform.details', { subdomain: hostFor(hosting, tenant.slug), members: tenant.activeMembers, status: t(`platform.status.${tenant.status}` as const) })}
         </p>
         <div className="flex flex-wrap gap-3 sm:col-span-2">
           <div className="w-40"><Button type="submit" disabled={busy}>{t('common.save')}</Button></div>

@@ -1,0 +1,149 @@
+# Выделенная установка Modulyn у клиента (Phase 11, E5–E10). Только готовые образы по версии — исходный код на сервер не попадает.
+# Все значения — в .env рядом с этим файлом (создаётся командой из docs/install.md, права 600).
+# Обновление:  MODULYN_VERSION=<новая> в .env → docker compose pull && docker compose up -d --wait
+# Откат:       прежняя MODULYN_VERSION → то же (миграции только добавляют — см. docs/operations.md).
+name: modulyn
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "5" }
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?missing .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing .env}
+      POSTGRES_DB: ${POSTGRES_DB:?missing .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Роли БД и миграции перед каждым запуском API; также команды администратора: docker compose run --rm migrate node apps/api/scripts/platform-admin.mjs …
+  migrate:
+    image: ${MODULYN_REGISTRY:?missing .env}/modulyn-migrate:${MODULYN_VERSION:?missing .env}
+    restart: "no"
+    logging: *logging
+    environment:
+      DATABASE_ADMIN_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      MIGRATION_DATABASE_URL: postgresql://modulyn_owner:${DB_OWNER_PASSWORD:?missing .env}@db:5432/${POSTGRES_DB}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?missing .env}
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    image: ${MODULYN_REGISTRY}/modulyn-api:${MODULYN_VERSION}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      DATABASE_URL: postgresql://modulyn_app:${DB_APP_PASSWORD}@db:5432/${POSTGRES_DB}
+      APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:?missing .env}
+      APP_HOST: ${APP_HOST:?missing .env}
+      PLATFORM_HOST: ${PLATFORM_HOST:?missing .env}
+      TENANT_HOSTS: ${TENANT_HOSTS:?missing .env}
+      PUBLIC_SCHEME: https
+      PUBLIC_PORT: 443
+      # API доступен только через Caddy, который записывает X-Forwarded-For одним адресом клиента.
+      TRUST_PROXY: "true"
+      JWT_SECRET_TENANT: ${JWT_SECRET_TENANT:?missing .env}
+      JWT_SECRET_APP: ${JWT_SECRET_APP:?missing .env}
+      JWT_SECRET_PLATFORM: ${JWT_SECRET_PLATFORM:?missing .env}
+      PLATFORM_TOTP_KEY: ${PLATFORM_TOTP_KEY:?missing .env}
+      SMTP_URL: ${SMTP_URL:?missing .env}
+      MAIL_FROM: ${MAIL_FROM:?missing .env}
+      BRAND_NAME: ${BRAND_NAME:-}
+      BRAND_COLOR: ${BRAND_COLOR:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  web:
+    image: ${MODULYN_REGISTRY}/modulyn-web:${MODULYN_VERSION}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: 1
+      APP_BASE_DOMAIN: ${APP_BASE_DOMAIN}
+      APP_HOST: ${APP_HOST}
+      PLATFORM_HOST: ${PLATFORM_HOST}
+      TENANT_HOSTS: ${TENANT_HOSTS}
+      BRAND_NAME: ${BRAND_NAME:-}
+      BRAND_COLOR: ${BRAND_COLOR:-}
+      BRAND_LOGO_URL: ${BRAND_LOGO_URL:-}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  # HTTPS (E6): Caddy сам получает и продлевает сертификаты Let's Encrypt на адреса из CADDY_HOSTS.
+  caddy:
+    image: caddy:2.10.0-alpine
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_HOSTS: ${CADDY_HOSTS:?missing .env}
+      CADDY_TLS: ${CADDY_TLS:?missing .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./brand:/srv/brand:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api: { condition: service_healthy }
+      web: { condition: service_healthy }
+
+  # Ночные зашифрованные копии вне сервера (E9) и сигнал наблюдения (E10).
+  backup:
+    image: ${MODULYN_REGISTRY}/modulyn-backup:${MODULYN_VERSION}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DATABASE_ADMIN_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://modulyn_app:${DB_APP_PASSWORD}@db:5432/${POSTGRES_DB}
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?missing .env}
+      BACKUP_REMOTE: ${BACKUP_REMOTE:?missing .env}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_KEEP_MONTHLY: ${BACKUP_KEEP_MONTHLY:-6}
+      BACKUP_PING_URL: ${BACKUP_PING_URL:-}
+      RCLONE_CONFIG_OFFSITE_TYPE: ${RCLONE_CONFIG_OFFSITE_TYPE:?missing .env}
+      RCLONE_CONFIG_OFFSITE_URL: ${RCLONE_CONFIG_OFFSITE_URL:-}
+      RCLONE_CONFIG_OFFSITE_VENDOR: ${RCLONE_CONFIG_OFFSITE_VENDOR:-}
+      RCLONE_CONFIG_OFFSITE_USER: ${RCLONE_CONFIG_OFFSITE_USER:-}
+      RCLONE_CONFIG_OFFSITE_PASS: ${RCLONE_CONFIG_OFFSITE_PASS:-}
+      RCLONE_CONFIG_OFFSITE_PROVIDER: ${RCLONE_CONFIG_OFFSITE_PROVIDER:-}
+      RCLONE_CONFIG_OFFSITE_ENDPOINT: ${RCLONE_CONFIG_OFFSITE_ENDPOINT:-}
+      RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID: ${RCLONE_CONFIG_OFFSITE_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_OFFSITE_SECRET_ACCESS_KEY:-}
+    volumes:
+      - ${BACKUP_LOCAL_REMOTE:-./backups-offsite-test}:/offsite
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

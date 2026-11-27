@@ -1,5 +1,6 @@
 'use client';
 
+import { type Hosting } from '@modulyn/contracts';
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PlatformMeResponse } from '@modulyn/contracts';
@@ -14,7 +15,7 @@ import { PasswordForm } from './PasswordForm';
  * admin.<домен>: обязательные шаги (смена временного пароля → настройка второго фактора), затем раздел компаний.
  * Сервер сам не пустит дальше, пока шаги не пройдены; интерфейс только показывает нужный экран.
  */
-export function PlatformHome({ baseDomain }: { baseDomain: string }) {
+export function PlatformHome({ hosting }: { hosting: Hosting }) {
   const { t } = useI18n();
   const [me, setMe] = useState<PlatformMeResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -50,7 +51,7 @@ export function PlatformHome({ baseDomain }: { baseDomain: string }) {
           </nav>
         </div>
       </header>
-      <TenantsAdmin baseDomain={baseDomain} />
+      <TenantsAdmin hosting={hosting} />
     </div>
   );
 }

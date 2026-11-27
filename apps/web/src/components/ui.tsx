@@ -2,11 +2,16 @@
 
 import type { ReactNode } from 'react';
 import { useI18n } from '../i18n/client';
+import { useBrand } from './brand';
 
 /** Общие элементы интерфейса: минималистичные, без лишних визуальных деталей. */
 
+/** Бренд установки (Phase 11, E4): логотип, если задан, иначе название продукта. */
 export function Brand() {
-  return <p className="text-xs font-semibold tracking-[0.25em] text-teal-800">MODULYN</p>;
+  const { name, logoUrl } = useBrand();
+  // eslint-disable-next-line @next/next/no-img-element -- логотип задаётся на сервере установки, оптимизация Next не нужна
+  if (logoUrl) return <img src={logoUrl} alt={name} className="h-8 w-auto max-w-[12rem] object-contain" />;
+  return <p className="text-xs font-semibold uppercase tracking-[0.25em] text-brand">{name}</p>;
 }
 
 export function Centered({ children }: { children: ReactNode }) {
@@ -30,14 +35,14 @@ export function Field({ label, ...input }: { label: string } & React.InputHTMLAt
   return (
     <label className="block text-sm">
       <span className="mb-1 block font-medium text-slate-700">{label}</span>
-      <input {...input} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20" />
+      <input {...input} className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-brand focus:ring-2 focus:ring-brand/20" />
     </label>
   );
 }
 
 export function Button({ variant = 'primary', ...props }: { variant?: 'primary' | 'secondary' } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const style = variant === 'primary'
-    ? 'bg-teal-800 text-white hover:bg-teal-900 disabled:bg-teal-800/60'
+    ? 'bg-brand text-white hover:bg-brand-dark disabled:bg-brand/60'
     : 'border border-slate-300 bg-white text-slate-800 hover:bg-slate-50';
   return <button {...props} className={`w-full rounded-md px-4 py-2 text-sm font-medium transition ${style} ${props.className ?? ''}`} />;
 }

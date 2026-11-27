@@ -18,7 +18,8 @@ export const INVITATIONS_PER_DAY = 50;
  */
 @Injectable()
 export class InvitationsService {
-  private readonly appOrigin = originFor(parseEnvironment(process.env), 'app');
+  private readonly env = parseEnvironment(process.env);
+  private readonly appOrigin = originFor(this.env, 'app');
 
   constructor(private readonly store: MembersStore, private readonly tokens: TokensService, private readonly mail: MailService) {}
 
@@ -40,6 +41,6 @@ export class InvitationsService {
   }
 
   sendInvitation(email: string, companyName: string, inviterName: string | null, token: string, locale: Locale): Promise<boolean> {
-    return this.mail.send(invitationMail({ to: email, companyName, inviterName, link: this.link(token), locale }));
+    return this.mail.send(invitationMail({ to: email, companyName, inviterName, link: this.link(token), locale, brand: this.env.brand }));
   }
 }

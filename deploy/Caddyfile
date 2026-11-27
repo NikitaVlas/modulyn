@@ -1,0 +1,30 @@
+# Вход в установку Modulyn (Phase 11, E6). Адреса — CADDY_HOSTS («crm.x.de, login.crm.x.de, admin.crm.x.de»).
+# CADDY_TLS — email для Let's Encrypt (бесплатный сертификат на эти имена, продление автоматическое)
+# или internal — собственный сертификат Caddy (только для локальной проверки).
+{$CADDY_HOSTS} {
+	tls {$CADDY_TLS}
+	encode zstd gzip
+	# Как client_max_body_size 1m у nginx локального стека.
+	request_body {
+		max_size 1MB
+	}
+	header {
+		-Server
+		# Без includeSubDomains: на домене клиента могут быть сайты без HTTPS.
+		Strict-Transport-Security "max-age=31536000"
+	}
+	# Логотип и другие файлы бренда (E4): папка deploy/brand на сервере, адрес /brand/<файл>.
+	handle_path /brand/* {
+		root * /srv/brand
+		file_server
+	}
+	handle /api/* {
+		reverse_proxy api:3001 {
+			# Один адрес клиента: API доверяет только ему (ограничение попыток входа по IP). Заголовок клиента не передаётся.
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

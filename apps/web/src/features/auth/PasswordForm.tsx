@@ -51,7 +51,7 @@ export function PasswordForm({ forced = false, onDone }: { forced?: boolean; onD
           <Button type="submit" disabled={busy}>{busy ? t('common.saving') : t('password.save')}</Button>
         </form>
       </Card>
-      {!forced && <Link href="/" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">{t('common.back')}</Link>}
+      {!forced && <Link href="/" className="mt-4 block text-center text-sm text-slate-600 hover:text-brand">{t('common.back')}</Link>}
     </Centered>
   );
 }

@@ -27,7 +27,8 @@
     "platform:admin": "node scripts/db.mjs platform-admin",
     "stack:up": "docker compose up --build -d --wait",
     "stack:down": "docker compose down",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

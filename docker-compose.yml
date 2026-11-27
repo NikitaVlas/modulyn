@@ -20,6 +20,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: migrate
     environment:
       NODE_ENV: production
       DATABASE_ADMIN_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -35,10 +36,18 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      target: runtime
     environment:
       NODE_ENV: production
       API_PORT: 3001
       APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
+      # Phase 11 (E2): явные адреса выделенной установки; пусто — схема «метка + домен».
+      APP_HOST: ${APP_HOST:-}
+      PLATFORM_HOST: ${PLATFORM_HOST:-}
+      TENANT_HOSTS: ${TENANT_HOSTS:-}
+      # Phase 11 (E4): бренд установки в письмах; пусто — Modulyn.
+      BRAND_NAME: ${BRAND_NAME:-}
+      BRAND_COLOR: ${BRAND_COLOR:-}
       # Runtime-роль без обхода RLS; суперпользователь и владелец схемы API не передаются.
       DATABASE_URL: postgresql://modulyn_app:${DB_APP_PASSWORD:?Run pnpm env:init}@db:5432/${POSTGRES_DB}
       JWT_SECRET_TENANT: ${JWT_SECRET_TENANT:?Run pnpm env:init}
@@ -78,6 +87,12 @@ services:
       NEXT_TELEMETRY_DISABLED: 1
       # Next.js определяет по hostname, какой раздел показать: app / admin / компания.
       APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
+      APP_HOST: ${APP_HOST:-}
+      PLATFORM_HOST: ${PLATFORM_HOST:-}
+      TENANT_HOSTS: ${TENANT_HOSTS:-}
+      BRAND_NAME: ${BRAND_NAME:-}
+      BRAND_COLOR: ${BRAND_COLOR:-}
+      BRAND_LOGO_URL: ${BRAND_LOGO_URL:-}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s

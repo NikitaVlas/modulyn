@@ -258,9 +258,9 @@ export const server = {
   },
   'mail.resetTitle': { de: 'Passwort zurücksetzen', en: 'Reset your password', ru: 'Восстановление пароля' },
   'mail.resetLine1': {
-    de: 'Jemand hat eine Passwortänderung für Ihr Modulyn-Konto angefordert.',
-    en: 'Someone requested a password change for your Modulyn account.',
-    ru: 'Кто-то запросил смену пароля для вашего аккаунта Modulyn.',
+    de: 'Jemand hat eine Passwortänderung für Ihr Konto bei {brand} angefordert.',
+    en: 'Someone requested a password change for your {brand} account.',
+    ru: 'Кто-то запросил смену пароля для вашего аккаунта {brand}.',
   },
   'mail.resetLine2': {
     de: 'Der Link ist 1 Stunde gültig und kann einmal verwendet werden. Nach der Änderung werden alle Ihre Sitzungen beendet.',

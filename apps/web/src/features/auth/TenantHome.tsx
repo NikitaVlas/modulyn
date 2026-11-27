@@ -1,5 +1,6 @@
 'use client';
 
+import { singleCompany, type Hosting } from '@modulyn/contracts';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import type { ModuleKey, TenantCapabilitiesResponse, TenantMeResponse } from '@modulyn/contracts';
@@ -17,8 +18,8 @@ import { ApiError, api, originOf, post } from './api';
  * Каркас CRM компании (3.7): шапка с названием компании, пользователь, язык, переключатель компаний, выход.
  * Нет сессии этой компании — переход через центральный вход (/api/auth/handoff/start).
  */
-export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {}, leadId, leadDeleted = false }: {
-  baseDomain: string; error?: string | undefined;
+export function TenantHome({ hosting, error, section = 'home', leadsQuery = {}, leadId, leadDeleted = false }: {
+  hosting: Hosting; error?: string | undefined;
   section?: 'home' | 'users' | 'leads' | 'lead' | 'lead-new' | 'forms';
   /** Фильтры списка заявок из адреса страницы (7.5). */
   leadsQuery?: LeadsQuery;
@@ -50,7 +51,7 @@ export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {
   }, [error]);
 
   async function logout() {
-    try { await post('/api/auth/logout', {}, { retry: false }); } finally { window.location.href = originOf('app', baseDomain) + '/login'; }
+    try { await post('/api/auth/logout', {}, { retry: false }); } finally { window.location.href = originOf('app', hosting) + '/login'; }
   }
 
   if (state === 'handoff-error') {
@@ -86,7 +87,8 @@ export function TenantHome({ baseDomain, error, section = 'home', leadsQuery = {
             {me.role === 'TENANT_ADMIN' && <Link href="/users" className={`rounded-md px-3 py-1.5 hover:bg-slate-100 ${section === 'users' ? 'font-semibold' : ''}`}>{t('nav.users')}</Link>}
             <span className="text-slate-600">{me.user.name} · {t(`role.${me.role}` as const)}</span>
             <LanguageSwitcher signedIn />
-            <a href={originOf('app', baseDomain) + '/?choose=1'} className="rounded-md px-3 py-1.5 hover:bg-slate-100">{t('nav.switchCompany')}</a>
+            {/* Phase 11 (E3): у выделенной установки с одной компанией переключать некуда. */}
+            {!singleCompany(hosting) && <a href={originOf('app', hosting) + '/?choose=1'} className="rounded-md px-3 py-1.5 hover:bg-slate-100">{t('nav.switchCompany')}</a>}
             <a href="/password" className="rounded-md px-3 py-1.5 hover:bg-slate-100">{t('nav.password')}</a>
             <button onClick={logout} className="rounded-md border border-slate-300 px-3 py-1.5 hover:bg-slate-50">{t('common.signOut')}</button>
           </nav>

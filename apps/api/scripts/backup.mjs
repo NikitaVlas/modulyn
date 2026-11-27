@@ -19,12 +19,25 @@ if (!user || !database || !adminUrl) {
 }
 const CHECK_DB = `${database}_restore_check`;
 
+/**
+ * Инструменты PostgreSQL (pg_dump, pg_restore, createdb, dropdb).
+ * Локально — в контейнере db (docker compose exec); BACKUP_DIRECT=1 — прямо в этом контейнере/машине
+ * (образ копий на сервере клиента, Phase 11 E9): подключение берётся из DATABASE_ADMIN_URL.
+ */
 function compose(args, { stdin, stdout } = {}) {
-  const r = spawnSync('docker', ['compose', 'exec', '-T', 'db', ...args], {
-    cwd: root, stdio: [stdin ?? 'ignore', stdout ?? 'inherit', 'inherit'],
-  });
-  if (r.error) throw new Error(`docker is not available: ${r.error.code}`);
-  if (r.status !== 0) throw new Error(`${args[0]} failed (exit ${r.status}). Is the stack running? pnpm stack:up`);
+  const direct = process.env.BACKUP_DIRECT === '1';
+  let r;
+  if (direct) {
+    const url = new URL(adminUrl);
+    r = spawnSync(args[0], args.slice(1), {
+      stdio: [stdin ?? 'ignore', stdout ?? 'inherit', 'inherit'],
+      env: { ...process.env, PGHOST: url.hostname, PGPORT: url.port || '5432', PGUSER: decodeURIComponent(url.username), PGPASSWORD: decodeURIComponent(url.password) },
+    });
+  } else {
+    r = spawnSync('docker', ['compose', 'exec', '-T', 'db', ...args], { cwd: root, stdio: [stdin ?? 'ignore', stdout ?? 'inherit', 'inherit'] });
+  }
+  if (r.error) throw new Error(`${direct ? args[0] : 'docker'} is not available: ${r.error.code}`);
+  if (r.status !== 0) throw new Error(`${args[0]} failed (exit ${r.status})${direct ? '' : '. Is the stack running? pnpm stack:up'}`);
 }
 
 function urlFor(db) {
@@ -60,8 +73,8 @@ async function inspect(url) {
   });
 }
 
-async function backup() {
-  const dir = resolve(root, 'backups');
+/** Копия и сводка. dir — папка (по умолчанию backups/ проекта). Возвращает пути к файлам (для выгрузки, Phase 11). */
+export async function backup(dir = resolve(root, 'backups')) {
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
   const file = resolve(dir, `modulyn-${stamp}.dump`);
@@ -73,6 +86,7 @@ async function backup() {
   const rows = Object.values(summary.counts).reduce((a, b) => a + b, 0);
   console.log(`db:backup: ${basename(file)} — ${Object.keys(summary.counts).length} tables, ${rows} rows, ${summary.migrations.length} migrations.`);
   console.log('Keep the copy away from this server, together with the keys from .env (see docs/operations.md).');
+  return { file, manifest: file.replace(/\.dump$/, '.json'), rows };
 }
 
 async function restoreCheck(fileArg) {
@@ -123,12 +137,14 @@ async function restoreCheck(fileArg) {
   }
 }
 
-const [command, arg] = process.argv.slice(2);
-try {
-  if (command === 'backup') await backup();
-  else if (command === 'restore-check') await restoreCheck(arg);
-  else { console.error('Usage: node backup.mjs backup | restore-check <file>'); process.exitCode = 1; }
-} catch (error) {
-  console.error(`db:${command ?? 'backup'} failed: ${error.message}`);
-  process.exitCode = 1;
+if (import.meta.main) {
+  const [command, arg] = process.argv.slice(2);
+  try {
+    if (command === 'backup') await backup();
+    else if (command === 'restore-check') await restoreCheck(arg);
+    else { console.error('Usage: node backup.mjs backup | restore-check <file>'); process.exitCode = 1; }
+  } catch (error) {
+    console.error(`db:${command ?? 'backup'} failed: ${error.message}`);
+    process.exitCode = 1;
+  }
 }

@@ -9,6 +9,8 @@
  * Используется только Host. X-Forwarded-Host от клиента не читается: nginx перезаписывает Host сам.
  */
 
+import { hostKind, type Hosting } from '@modulyn/contracts';
+
 /** Зарезервированные поддомены (D10). Тот же список проверяется CHECK-ограничением tenants_slug_not_reserved. */
 export const RESERVED_SUBDOMAINS: ReadonlySet<string> = new Set([
   'admin', 'api', 'www', 'app', 'mail', 'static', 'assets', 'status', 'help', 'support',
@@ -25,7 +27,11 @@ export type HostResolution =
 
 const INVALID: HostResolution = { kind: 'invalid' };
 
-export function resolveHost(hostHeader: string | undefined, baseDomain: string): HostResolution {
+/**
+ * hosting — базовый домен (режим «метка + домен») или настройка адресов установки (Phase 11, E2):
+ * у выделенной установки принимаются только явные адреса входа, платформы и компании.
+ */
+export function resolveHost(hostHeader: string | undefined, hosting: string | Hosting): HostResolution {
   if (typeof hostHeader !== 'string' || hostHeader.length === 0 || hostHeader.length > 300) return INVALID;
   if (/\s/.test(hostHeader)) return INVALID;
 
@@ -36,13 +42,7 @@ export function resolveHost(hostHeader: string | undefined, baseDomain: string):
   const port = parts[1];
   if (port !== undefined && !/^\d{1,5}$/.test(port)) return INVALID;
 
-  const suffix = '.' + baseDomain;
-  if (!hostname.endsWith(suffix)) return INVALID;
-  const label = hostname.slice(0, -suffix.length);
-  if (!SLUG_PATTERN.test(label)) return INVALID; // пусто, точки (вложенные поддомены), не-ASCII, неверный формат
-
-  if (label === 'admin') return { kind: 'platform' };
-  if (label === 'app') return { kind: 'app' };
-  if (RESERVED_SUBDOMAINS.has(label)) return INVALID;
-  return { kind: 'tenant', slug: label };
+  // Пусто, точки (вложенные поддомены), не-ASCII, неверный формат, зарезервированные метки — INVALID.
+  const result = hostKind(typeof hosting === 'string' ? { baseDomain: hosting } : hosting, hostname, RESERVED_SUBDOMAINS);
+  return result.kind === 'invalid' ? INVALID : result;
 }

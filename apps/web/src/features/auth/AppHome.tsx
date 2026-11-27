@@ -1,5 +1,6 @@
 'use client';
 
+import { type Hosting } from '@modulyn/contracts';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { AppMeResponse } from '@modulyn/contracts';
@@ -12,7 +13,7 @@ import { PasswordForm } from './PasswordForm';
  * app.<домен>: выбор компании (3.10). Список приходит с сервера и содержит только активные участия.
  * Переход — через /api/auth/handoff/start на поддомене компании (одноразовый код, A6).
  */
-export function AppHome({ baseDomain, error, choose }: { baseDomain: string; error?: string | undefined; choose: boolean }) {
+export function AppHome({ hosting, error, choose }: { hosting: Hosting; error?: string | undefined; choose: boolean }) {
   const { t } = useI18n();
   const [me, setMe] = useState<AppMeResponse | null>(null);
   const [failed, setFailed] = useState(false);
@@ -25,7 +26,7 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
     api<AppMeResponse>('/api/auth/me').then(data => {
       // Одна компания и пользователь не открыл выбор сам — сразу в неё.
       if (!data.passwordChangeRequired && data.companies.length === 1 && !error && !choose) {
-        window.location.href = originOf(data.companies[0]!.slug, baseDomain) + '/api/auth/handoff/start';
+        window.location.href = originOf(data.companies[0]!.slug, hosting) + '/api/auth/handoff/start';
         return;
       }
       setMe(data);
@@ -33,7 +34,7 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
       if (e instanceof ApiError && e.status === 401) router.replace('/login');
       else setFailed(true);
     });
-  }, [baseDomain, error, choose, router, reloadKey]);
+  }, [hosting, error, choose, router, reloadKey]);
 
   async function logout() {
     try { await post('/api/auth/logout', {}, { retry: false }); } finally { router.replace('/login'); }
@@ -56,7 +57,7 @@ export function AppHome({ baseDomain, error, choose }: { baseDomain: string; err
             <ul className="divide-y divide-slate-100">
               {me.companies.map(c => (
                 <li key={c.slug}>
-                  <a href={originOf(c.slug, baseDomain) + '/api/auth/handoff/start'} className="flex items-center justify-between py-3 hover:text-teal-800">
+                  <a href={originOf(c.slug, hosting) + '/api/auth/handoff/start'} className="flex items-center justify-between py-3 hover:text-brand">
                     <span className="font-medium">{c.displayName}</span>
                     <span className="text-xs text-slate-500">{t(`role.${c.role}` as const)}</span>
                   </a>

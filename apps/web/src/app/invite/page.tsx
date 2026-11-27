@@ -6,5 +6,5 @@ import { currentSite, firstParam } from '../../lib/site';
 export default async function InvitePage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const site = await currentSite();
   if (site.kind !== 'app') notFound();
-  return <InviteAccept baseDomain={site.baseDomain} error={firstParam((await searchParams).error)} />;
+  return <InviteAccept hosting={site.hosting} error={firstParam((await searchParams).error)} />;
 }

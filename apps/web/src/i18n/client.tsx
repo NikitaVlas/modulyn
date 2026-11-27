@@ -90,7 +90,7 @@ export function LanguageSwitcher({ signedIn = false, className = '' }: { signedI
       {LOCALES.map(l => (
         <button key={l} type="button" lang={l} title={LOCALE_NAMES[l]} aria-pressed={l === locale}
           onClick={() => { if (l !== locale) setLocale(l, { persist: signedIn }); }}
-          className={`px-2 py-1 font-medium uppercase first:rounded-l-md last:rounded-r-md ${l === locale ? 'bg-teal-800 text-white' : 'text-slate-700 hover:bg-slate-50'}`}>
+          className={`px-2 py-1 font-medium uppercase first:rounded-l-md last:rounded-r-md ${l === locale ? 'bg-brand text-white' : 'text-slate-700 hover:bg-slate-50'}`}>
           {l}
         </button>
       ))}

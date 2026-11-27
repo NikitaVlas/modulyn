@@ -188,3 +188,5 @@ export interface FormSubmissionEntry {
   id: string; endpointId: string; endpointName: string; status: FormSubmissionStatus;
   errorCode: string | null; leadId: string | null; createdAt: string;
 }
+
+export * from './hosting.js';

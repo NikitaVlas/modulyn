@@ -139,7 +139,7 @@ export function FormsAdmin() {
                       {t(`forms.status.${s.status}` as const)}
                       {s.errorCode && <span className="text-xs"> · {isReason(s.errorCode) ? t(`forms.reason.${s.errorCode}` as const) : s.errorCode}</span>}
                     </td>
-                    <td className="px-4 py-2 text-right">{s.leadId && <Link href={`/leads/${s.leadId}`} className="text-teal-800 hover:underline">{t('forms.openLead')}</Link>}</td>
+                    <td className="px-4 py-2 text-right">{s.leadId && <Link href={`/leads/${s.leadId}`} className="text-brand hover:underline">{t('forms.openLead')}</Link>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -208,7 +208,7 @@ function EndpointForm({ endpoint, onCancel, onSaved }: {
     finally { setBusy(false); }
   }
 
-  const area = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20';
+  const area = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs outline-none focus:border-brand focus:ring-2 focus:ring-brand/20';
   return (
     <form onSubmit={submit} className="mb-8 space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="font-semibold">{endpoint ? t('forms.editTitle', { name: endpoint.name }) : t('forms.new')}</h2>

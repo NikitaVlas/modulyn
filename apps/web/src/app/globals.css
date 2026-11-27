@@ -1,3 +1,14 @@
 @import "tailwindcss";
-:root { color-scheme: light; }
+
+/*
+ * Phase 11 (E4): цвет бренда установки. --brand задаёт сервер (BRAND_COLOR) в <html style>; без настройки — бирюзовый Modulyn.
+ * Тёмный (наведение) и светлый (фон значков) оттенки вычисляются из основного.
+ */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-dark: color-mix(in srgb, var(--brand) 80%, black);
+  --color-brand-soft: color-mix(in srgb, var(--brand) 8%, white);
+}
+
+:root { color-scheme: light; --brand: #115e59; }
 body { margin: 0; background: #f5f6f2; color: #17272c; font-family: Arial, Helvetica, sans-serif; }

@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   return (
     <LoginForm
       context={site.kind}
-      baseDomain={site.baseDomain}
+      hosting={site.hosting}
       tenant={tenant && /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(tenant) ? tenant : undefined}
       error={firstParam(params.error)}
       returnTo={site.kind === 'app' && firstParam(params.next) === 'invite' ? 'invite' : undefined}

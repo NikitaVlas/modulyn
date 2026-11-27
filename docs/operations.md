@@ -31,6 +31,9 @@
 | `SMTP_URL`, `COMPOSE_SMTP_URL`, `MAIL_FROM` | Почта: приглашения, сброс пароля | Письма не уходят (приглашение можно отправить повторно) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Вход через Google (необязательно) | Кнопка Google скрыта |
 | `NODE_ENV`, `API_PORT` | Режим и порт API | — |
+| `APP_HOST`, `PLATFORM_HOST`, `TENANT_HOSTS` | Phase 11: явные адреса выделенной установки (вход, платформа, `crm.<домен>=<компания>`); задаются вместе или не задаются | Пусто — схема «метка + домен» |
+| `BRAND_NAME`, `BRAND_COLOR`, `BRAND_LOGO_URL` | Phase 11: бренд установки | Пусто — Modulyn |
+| `MODULYN_REGISTRY`, `MODULYN_VERSION`, `CADDY_HOSTS`, `CADDY_TLS`, `BACKUP_*`, `RCLONE_CONFIG_OFFSITE_*` | Только на сервере клиента (deploy/): версия образов, HTTPS, ночные копии | см. раздел 7 и install.md |
 
 ## 3. Резервные копии и восстановление
 
@@ -118,3 +121,38 @@ API раз в час вызывает функцию базы `modulyn_cleanup()
 | Сотрудники | Администратор компании → «Пользователи» |
 | Подключить сайт | Администратор компании → «Приём заявок»; инструкция для сайта — [integrations/web-forms.md](integrations/web-forms.md) |
 | Обновить версию | `git pull`, `pnpm install --frozen-lockfile`, `pnpm db:backup`, `pnpm stack:up` (миграции применяются автоматически), `pnpm smoke` (локально) |
+
+## 7. Выделенная установка у клиента (Phase 11)
+
+Установка — [install.md](install.md). На сервере клиента: папка `~/modulyn` с `docker-compose.yml`, `Caddyfile`, `.env` (600), `brand/`. Команды — из этой папки.
+
+### 7.1. Обновление
+
+1. У себя: `MODULYN_REGISTRY=ghcr.io/<логин> pnpm release <новая версия> --push` (из закоммиченного состояния).
+2. На сервере клиента — сначала копия: `docker compose run --rm backup node apps/api/scripts/offsite-backup.mjs once`.
+3. В `.env` — `MODULYN_VERSION=<новая версия>`, затем:
+
+```bash
+docker compose pull && docker compose up -d --wait
+```
+
+Миграции применяются автоматически (сервис `migrate` перед API). Проверка: `curl -s https://crm.…/api/health/ready` и вход в CRM.
+
+### 7.2. Откат
+
+`MODULYN_VERSION=<прежняя>` в `.env` и `docker compose up -d --wait`. Миграции Modulyn только добавляют (новые таблицы, столбцы, права), поэтому прежняя версия работает с базой после новой. Если миграция что-то удаляет — это будет явно сказано в описании версии, и откат возможен только восстановлением копии (раздел 3).
+
+### 7.3. Проверка копий (раз в месяц)
+
+1. Скачайте последнюю пару из хранилища клиента (`daily/modulyn-<время>.dump.age` и `.json`), например через веб-интерфейс хранилища или `rclone copy`.
+2. У себя расшифруйте закрытым ключом клиента:
+
+   ```bash
+   docker run --rm -v "$PWD:/w" --entrypoint age ghcr.io/<логин>/modulyn-backup:<версия> -d -i /w/nova-backup-key.txt -o /w/modulyn-<время>.dump /w/modulyn-<время>.dump.age
+   ```
+3. Положите `.dump` и `.json` в `backups/` проекта и выполните `pnpm db:restore-check backups/modulyn-<время>.dump` (запущенный локальный стек). Ответ `OK` — копия годна.
+4. Удалите расшифрованный файл: в нём персональные данные клиента.
+
+### 7.4. Логи и диагностика на сервере
+
+`docker compose ps`, `docker compose logs --tail=100 api web caddy backup`. Сертификаты — `docker compose logs caddy` (ошибки получения — обычно DNS ещё не указывает на сервер или закрыт порт 80). Логи ограничены по размеру (10 МБ × 5 на сервис).

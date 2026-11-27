@@ -61,7 +61,7 @@ function RequestLink() {
           </form>
         )}
       </Card>
-      <Link href="/login" className="mt-4 block text-center text-sm text-slate-600 hover:text-teal-800">{t('reset.toLogin')}</Link>
+      <Link href="/login" className="mt-4 block text-center text-sm text-slate-600 hover:text-brand">{t('reset.toLogin')}</Link>
     </Centered>
   );
 }
@@ -92,7 +92,7 @@ function NewPassword({ token }: { token: string }) {
         {done ? (
           <div className="space-y-4">
             <Notice tone="info">{t('reset.done')}</Notice>
-            <Link href="/login" className="block w-full rounded-md bg-teal-800 px-4 py-2 text-center text-sm font-medium text-white hover:bg-teal-900">{t('common.signIn')}</Link>
+            <Link href="/login" className="block w-full rounded-md bg-brand px-4 py-2 text-center text-sm font-medium text-white hover:bg-brand-dark">{t('common.signIn')}</Link>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">

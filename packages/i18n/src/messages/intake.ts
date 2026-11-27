@@ -5,9 +5,9 @@ export const intake = {
   'forms.title': { de: 'Anfragen von Websites', en: 'Leads from websites', ru: 'Приём заявок с сайтов' },
   'forms.new': { de: 'Neuer Eingangspunkt', en: 'New intake endpoint', ru: 'Новая точка приёма' },
   'forms.intro': {
-    de: 'Ein Eingangspunkt ist die Adresse, an die eine Website Anfragen sendet. Jede Anfrage erscheint unter „Anfragen“ mit dem Status „Neu“. Die Anleitung für die Website-Entwicklung steht in der Modulyn-Dokumentation (docs/integrations/web-forms.md).',
-    en: 'An intake endpoint is the address a website sends leads to. Each lead appears under “Leads” with the status “New”. Instructions for the website developer are in the Modulyn documentation (docs/integrations/web-forms.md).',
-    ru: 'Точка приёма — адрес, на который сайт отправляет заявки. Каждая заявка появляется в разделе «Заявки» со статусом «Новая». Инструкция для разработчика сайта — в документации Modulyn (docs/integrations/web-forms.md).',
+    de: 'Ein Eingangspunkt ist die Adresse, an die eine Website Anfragen sendet. Jede Anfrage erscheint unter „Anfragen“ mit dem Status „Neu“. Die technische Anleitung zum Anbinden der Website erhalten Sie von Ihrem Ansprechpartner.',
+    en: 'An intake endpoint is the address a website sends leads to. Each lead appears under “Leads” with the status “New”. Technical instructions for connecting the website are available from your contact person.',
+    ru: 'Точка приёма — адрес, на который сайт отправляет заявки. Каждая заявка появляется в разделе «Заявки» со статусом «Новая». Техническую инструкцию по подключению сайта предоставит ваш контактный специалист.',
   },
   'forms.none': { de: 'Noch keine Eingangspunkte.', en: 'No intake endpoints yet.', ru: 'Точек приёма пока нет.' },
   'forms.mode.SERVER': { de: 'Vom Website-Server', en: 'From the website server', ru: 'С сервера сайта' },
@@ -72,9 +72,9 @@ export const intake = {
     ru: 'Секрет для «{name}» — скопируйте сейчас',
   },
   'forms.secretText': {
-    de: 'Er wird nur einmal angezeigt. Modulyn speichert nur seinen Fingerabdruck: Wiederherstellen lässt er sich nicht, nur neu erzeugen.',
-    en: 'It is shown only once. Modulyn stores only its fingerprint: it cannot be recovered, only replaced.',
-    ru: 'Он показывается один раз. В Modulyn хранится только его отпечаток: восстановить секрет нельзя, можно только выпустить новый.',
+    de: 'Er wird nur einmal angezeigt. Gespeichert wird nur sein Fingerabdruck: Wiederherstellen lässt er sich nicht, nur neu erzeugen.',
+    en: 'It is shown only once. Only its fingerprint is stored: it cannot be recovered, only replaced.',
+    ru: 'Он показывается один раз. Хранится только его отпечаток: восстановить секрет нельзя, можно только выпустить новый.',
   },
   'forms.secretSaved': {
     de: 'Ich habe den Geheimschlüssel gespeichert – ausblenden',

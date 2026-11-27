@@ -6,5 +6,5 @@ import { currentSite } from '../../../lib/site';
 export default async function NewLeadPage() {
   const site = await currentSite();
   if (site.kind !== 'tenant') notFound();
-  return <TenantHome baseDomain={site.baseDomain} section="lead-new" />;
+  return <TenantHome hosting={site.hosting} section="lead-new" />;
 }

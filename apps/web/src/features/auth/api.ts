@@ -1,5 +1,6 @@
 'use client';
 
+import { hostFor, type Hosting } from '@modulyn/contracts';
 import { clientT } from '../../i18n/client';
 
 /**
@@ -69,8 +70,8 @@ export function post<T>(path: string, body: unknown = {}, options?: { retry?: bo
   return api<T>(path, { method: 'POST', body: JSON.stringify(body) }, options);
 }
 
-/** Адрес другого поддомена с той же схемой и портом, что у текущей страницы. */
-export function originOf(label: string, baseDomain: string): string {
+/** Адрес входа ('app'), платформы ('admin') или компании (slug) с той же схемой и портом, что у текущей страницы (Phase 11, E2). */
+export function originOf(label: string, hosting: Hosting): string {
   const { protocol, port } = window.location;
-  return `${protocol}//${label}.${baseDomain}${port ? ':' + port : ''}`;
+  return `${protocol}//${hostFor(hosting, label)}${port ? ':' + port : ''}`;
 }

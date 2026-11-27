@@ -214,6 +214,18 @@ test('Phase 10: mails in the given language, German by default for the platform'
   assert.doesNotMatch(en.text + de.text, /[А-Яа-яЁё]/);
 });
 
+test('Phase 11: the installation brand in mails (name, colour); default Modulyn', () => {
+  const brand = { name: 'Nova CRM', color: '#b91c1c' };
+  const m = passwordResetMail({ to: 'a@b.example', link: 'http://x/reset-password#t', locale: 'de', brand });
+  assert.match(m.html, /Nova CRM<\/p>/);
+  assert.match(m.html, /background:#b91c1c/);
+  assert.match(m.text, /Ihr Konto bei Nova CRM/);
+  assert.doesNotMatch(m.html + m.text, /Modulyn/i);
+  const plain = passwordResetMail({ to: 'a@b.example', link: 'http://x/r#t', locale: 'en' });
+  assert.match(plain.text, /your Modulyn account/);
+  assert.match(passwordResetMail({ to: 'a@b.example', link: 'http://x/r#t', locale: 'en', brand: { name: 'X', color: 'red;}' } }).html, /background:#115e59/, 'invalid colour → default');
+});
+
 // ───────────── Phase 6: модули ─────────────
 test('guard: a module route needs the module enabled for the company; core routes do not', async () => {
   const tenantCtx = () => ({ kind: 'tenant', tenant: nova, host: 'nova.localhost:8080' });

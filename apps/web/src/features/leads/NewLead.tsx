@@ -32,7 +32,7 @@ export function NewLead() {
 
   return (
     <div className="max-w-xl">
-      <Link href="/leads" className="text-sm text-teal-800 hover:underline">{t('leads.backToAll')}</Link>
+      <Link href="/leads" className="text-sm text-brand hover:underline">{t('leads.backToAll')}</Link>
       <h1 className="mb-6 mt-2 text-2xl font-semibold tracking-tight">{t('leads.new')}</h1>
       <form onSubmit={submit} className="space-y-4 rounded-lg border border-slate-200 bg-white p-5">
         {error && <Notice>{error}</Notice>}
